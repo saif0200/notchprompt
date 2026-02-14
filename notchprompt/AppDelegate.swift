@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     private var startPauseItem: NSMenuItem?
     private var clickThroughItem: NSMenuItem?
+    private var privacyModeItem: NSMenuItem?
     private var localKeyMonitor: Any?
     private var globalKeyMonitor: Any?
 
@@ -54,6 +55,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
             .store(in: &cancellables)
 
+        model.$privacyModeEnabled
+            .receive(on: RunLoop.main)
+            .sink { [weak self] enabled in
+                self?.overlayController?.setPrivacyMode(enabled)
+            }
+            .store(in: &cancellables)
+
         Publishers.CombineLatest(model.$overlayWidth, model.$overlayHeight)
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _ in
@@ -75,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             model.$script.map { _ in () }.eraseToAnyPublisher(),
             model.$isRunning.map { _ in () }.eraseToAnyPublisher(),
             model.$isClickThrough.map { _ in () }.eraseToAnyPublisher(),
+            model.$privacyModeEnabled.map { _ in () }.eraseToAnyPublisher(),
             model.$speedPointsPerSecond.map { _ in () }.eraseToAnyPublisher(),
             model.$fontSize.map { _ in () }.eraseToAnyPublisher(),
             model.$overlayWidth.map { _ in () }.eraseToAnyPublisher(),
@@ -112,6 +121,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         clickThrough.target = self
         menu.addItem(clickThrough)
         clickThroughItem = clickThrough
+
+        let privacyMode = NSMenuItem(title: "Privacy Mode", action: #selector(togglePrivacyMode), keyEquivalent: "h")
+        privacyMode.target = self
+        privacyMode.keyEquivalentModifierMask = [.option, .command]
+        menu.addItem(privacyMode)
+        privacyModeItem = privacyMode
 
         menu.addItem(.separator())
 
@@ -155,6 +170,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func toggleClickThrough() {
         model.isClickThrough.toggle()
+    }
+
+    @objc private func togglePrivacyMode() {
+        model.privacyModeEnabled.toggle()
     }
 
     @objc private func importScriptFromMenu() {
@@ -274,6 +293,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         if menuItem === clickThroughItem {
             menuItem.state = model.isClickThrough ? .on : .off
+            return true
+        }
+
+        if menuItem === privacyModeItem {
+            menuItem.state = model.privacyModeEnabled ? .on : .off
             return true
         }
 

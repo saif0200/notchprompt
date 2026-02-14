@@ -122,6 +122,7 @@ struct OverlayView: View {
                 fontSize: CGFloat(model.fontSize),
                 speedPointsPerSecond: model.speedPointsPerSecond,
                 isRunning: model.isRunning,
+                hasStartedSession: model.hasStartedSession,
                 resetToken: model.resetToken,
                 jumpBackToken: model.jumpBackToken,
                 jumpBackDistancePoints: model.jumpBackDistancePoints,
@@ -135,7 +136,7 @@ struct OverlayView: View {
 
             if model.isCountingDown {
                 ZStack {
-                    Color.black.opacity(0.36)
+                    Color.black.opacity(0.92)
                     Text("\(model.countdownRemaining)")
                         .font(.system(size: 42, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)

@@ -21,7 +21,9 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
 
     @Published var isRunning: Bool = false
     @Published var isClickThrough: Bool = true
+    @Published var privacyModeEnabled: Bool = true
     @Published var isHovering: Bool = false
+    @Published private(set) var hasStartedSession: Bool = false
     @Published private(set) var isCountingDown: Bool = false
     @Published var countdownSeconds: Int = 3
     @Published private(set) var countdownRemaining: Int = 0
@@ -52,6 +54,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         static let script = "script"
         static let isRunning = "isRunning"
         static let isClickThrough = "isClickThrough"
+        static let privacyModeEnabled = "privacyModeEnabled"
         static let speed = "speedPointsPerSecond"
         static let fontSize = "fontSize"
         static let overlayWidth = "overlayWidth"
@@ -90,6 +93,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
 
         let delay = max(0, countdownSeconds)
         guard delay > 0 else {
+            hasStartedSession = true
             isRunning = true
             return
         }
@@ -153,7 +157,12 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         }
 
         isClickThrough = defaults.object(forKey: DefaultsKey.isClickThrough) as? Bool ?? isClickThrough
-        isRunning = defaults.object(forKey: DefaultsKey.isRunning) as? Bool ?? false
+        privacyModeEnabled = defaults.object(forKey: DefaultsKey.privacyModeEnabled) as? Bool ?? privacyModeEnabled
+        // Never auto-start on launch; require explicit user start each session.
+        isRunning = false
+        isCountingDown = false
+        countdownRemaining = 0
+        hasStartedSession = false
         speedPointsPerSecond = clampedSpeed(defaults.object(forKey: DefaultsKey.speed) as? Double ?? speedPointsPerSecond)
         fontSize = clamp(defaults.object(forKey: DefaultsKey.fontSize) as? Double ?? fontSize, lower: 12, upper: 40)
         overlayWidth = clamp(defaults.object(forKey: DefaultsKey.overlayWidth) as? Double ?? overlayWidth, lower: 400, upper: 1200)
@@ -167,6 +176,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         defaults.set(script, forKey: DefaultsKey.script)
         defaults.set(isRunning, forKey: DefaultsKey.isRunning)
         defaults.set(isClickThrough, forKey: DefaultsKey.isClickThrough)
+        defaults.set(privacyModeEnabled, forKey: DefaultsKey.privacyModeEnabled)
         defaults.set(speedPointsPerSecond, forKey: DefaultsKey.speed)
         defaults.set(fontSize, forKey: DefaultsKey.fontSize)
         defaults.set(overlayWidth, forKey: DefaultsKey.overlayWidth)
@@ -197,6 +207,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
             guard !Task.isCancelled else { return }
             isCountingDown = false
             countdownRemaining = 0
+            hasStartedSession = true
             isRunning = true
             countdownTask = nil
         }

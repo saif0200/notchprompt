@@ -42,6 +42,7 @@ final class OverlayWindowController {
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.ignoresMouseEvents = model.isClickThrough
+        panel.sharingType = model.privacyModeEnabled ? .none : .readOnly
 
         panel.contentView = hosting
         self.panel = panel
@@ -111,6 +112,17 @@ final class OverlayWindowController {
 #if DEBUG
         debugDump(
             reason: "setClickThrough isClickThrough=\(isClickThrough) ignoresMouseEvents=\(panel.ignoresMouseEvents)",
+            intendedScreen: Self.mainDisplayScreen(),
+            calc: nil
+        )
+#endif
+    }
+
+    func setPrivacyMode(_ enabled: Bool) {
+        panel.sharingType = enabled ? .none : .readOnly
+#if DEBUG
+        debugDump(
+            reason: "setPrivacyMode enabled=\(enabled) sharingType=\(panel.sharingType.rawValue)",
             intendedScreen: Self.mainDisplayScreen(),
             calc: nil
         )

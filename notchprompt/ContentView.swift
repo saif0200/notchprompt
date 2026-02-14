@@ -18,6 +18,11 @@ struct ContentView: View {
                 .font(.system(size: 18, weight: .semibold))
 
             Toggle("Click-through overlay (no cursor blocking)", isOn: $model.isClickThrough)
+            Toggle("Privacy mode (limit screen sharing capture)", isOn: $model.privacyModeEnabled)
+
+            Text("Best-effort only. Capture behavior can vary by app.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
                 Button(model.isRunning ? "Pause" : (model.isCountingDown ? "Counting..." : "Start")) {

@@ -12,6 +12,7 @@ struct ScrollingTextView: View {
     let fontSize: CGFloat
     let speedPointsPerSecond: Double
     let isRunning: Bool
+    let hasStartedSession: Bool
     let resetToken: UUID
     let jumpBackToken: UUID
     let jumpBackDistancePoints: CGFloat
@@ -35,6 +36,10 @@ struct ScrollingTextView: View {
 
     private var emptyStateMessage: String {
         "No script yet.\nOpen Settings and paste your script to begin."
+    }
+
+    private var initialStateMessage: String {
+        "Ready to prompt.\nPress Start to begin countdown."
     }
 
     private var clampedFadeFraction: CGFloat {
@@ -62,7 +67,7 @@ struct ScrollingTextView: View {
         GeometryReader { viewportProxy in
             TimelineView(.animation) { timeline in
                 ZStack(alignment: .topLeading) {
-                    if hasContent {
+                    if hasContent && hasStartedSession {
                         let copies = repetitionCount(for: viewportProxy.size.height)
                         VStack(spacing: Self.loopGap) {
                             ForEach(0..<copies, id: \.self) { index in
@@ -70,6 +75,13 @@ struct ScrollingTextView: View {
                             }
                         }
                         .offset(y: effectiveOffsetY)
+                    } else if hasContent {
+                        Text(initialStateMessage)
+                            .font(.system(size: max(fontSize * 0.72, 13), weight: .regular, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                            .padding(.horizontal, 12)
                     } else {
                         Text(emptyStateMessage)
                             .font(.system(size: max(fontSize * 0.72, 13), weight: .regular, design: .monospaced))
