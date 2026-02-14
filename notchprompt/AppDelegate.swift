@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     private var statusItem: NSStatusItem?
     private var overlayController: OverlayWindowController?
+    private var settingsWindowController: SettingsWindowController?
     private var cancellables: Set<AnyCancellable> = []
 
     private var startPauseItem: NSMenuItem?
@@ -81,7 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         menu.addItem(.separator())
 
-        let open = NSMenuItem(title: "Open Settings", action: #selector(openMainWindow), keyEquivalent: ",")
+        let open = NSMenuItem(title: "Settings…", action: #selector(openMainWindow), keyEquivalent: ",")
         open.target = self
         menu.addItem(open)
 
@@ -110,9 +111,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc private func openMainWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-        if let window = NSApp.windows.first(where: { $0.canBecomeKey && $0.isVisible }) {
-            window.makeKeyAndOrderFront(nil)
+        Task { @MainActor in
+            if settingsWindowController == nil {
+                settingsWindowController = SettingsWindowController()
+            }
+            settingsWindowController?.show()
         }
     }
 

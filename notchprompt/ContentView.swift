@@ -21,7 +21,6 @@ struct ContentView: View {
                 Button(model.isRunning ? "Pause" : "Start") {
                     model.isRunning.toggle()
                 }
-                .keyboardShortcut(.space, modifiers: [])
 
                 Button("Reset") {
                     model.resetScroll()
@@ -55,7 +54,7 @@ struct ContentView: View {
                     HStack {
                         Text("Width")
                             .frame(width: 72, alignment: .leading)
-                        Slider(value: $model.overlayWidth, in: 320...1100, step: 10)
+                        Slider(value: $model.overlayWidth, in: 400...1200, step: 10)
                         Text("\(Int(model.overlayWidth))")
                             .frame(width: 44, alignment: .trailing)
                     }
@@ -63,10 +62,12 @@ struct ContentView: View {
                     HStack {
                         Text("Height")
                             .frame(width: 72, alignment: .leading)
-                        Slider(value: $model.overlayHeight, in: 44...200, step: 2)
+                        Slider(value: $model.overlayHeight, in: 120...300, step: 2)
                         Text("\(Int(model.overlayHeight))")
                             .frame(width: 44, alignment: .trailing)
                     }
+
+
                 }
                 .padding(.vertical, 4)
             }

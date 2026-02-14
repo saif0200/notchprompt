@@ -13,74 +13,67 @@ private extension Color {
     static let notchBlack = Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 1.0)
 }
 
-/// Notch-like silhouette: subtly squared top corners, rounder bottom corners.
-/// This tends to read closer to the MacBook notch than a uniformly-rounded rect.
-private struct NotchShape: InsettableShape {
-    var topRadius: CGFloat = 10
-    var bottomRadius: CGFloat = 22
+/// MacBook-style notch contour:
+/// - flat top edge with square top corners
+/// - straight side walls
+/// - rounded lower corners
+private struct AppleNotchShape: InsettableShape {
+    /// Lower corner radius relative to height.
+    var bottomCornerRadiusRatio: CGFloat = 0.18
+    /// Portion of total height used by the straight side wall.
+    var sideWallDepthRatio: CGFloat = 0.82
     var insetAmount: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
         let r = rect.insetBy(dx: insetAmount, dy: insetAmount)
+        guard r.width > 0, r.height > 0 else { return Path() }
 
-        // Clamp radii to a sensible range.
-        let tr = max(0, min(topRadius, min(r.width, r.height) / 2))
-        let br = max(0, min(bottomRadius, min(r.width, r.height) / 2))
+        let w = r.width
+        let h = r.height
+
+        // sideWallDepthRatio controls how much vertical wall exists before lower arcs.
+        let depthRatio = max(0.60, min(sideWallDepthRatio, 0.95))
+        let lowerArcStartY = r.minY + (h * depthRatio)
+        let maxBottomRadiusFromDepth = max(0, r.maxY - lowerArcStartY)
+        let maxBottomRadiusFromWidth = w * 0.5
+        let targetBottomRadius = h * bottomCornerRadiusRatio
+        let bottomRadius = max(
+            0,
+            min(targetBottomRadius, min(maxBottomRadiusFromDepth, maxBottomRadiusFromWidth))
+        )
 
         var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
 
-        // Start at the top-left corner. If `tr == 0`, the top is perfectly straight with sharp corners.
-        p.move(to: CGPoint(x: r.minX + tr, y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX - tr, y: r.minY))
-        if tr > 0 {
-            // Top-right corner (rounded)
+        // Right side wall into large lower corner.
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - bottomRadius))
+        if bottomRadius > 0 {
             p.addArc(
-                center: CGPoint(x: r.maxX - tr, y: r.minY + tr),
-                radius: tr,
-                startAngle: .degrees(-90),
-                endAngle: .degrees(0),
+                center: CGPoint(x: r.maxX - bottomRadius, y: r.maxY - bottomRadius),
+                radius: bottomRadius,
+                startAngle: .degrees(0),
+                endAngle: .degrees(90),
                 clockwise: false
             )
         } else {
-            // Top-right corner (square)
-            p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+            p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
         }
 
-        // Right edge
-        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - br))
-        // Bottom-right corner (large)
-        p.addArc(
-            center: CGPoint(x: r.maxX - br, y: r.maxY - br),
-            radius: br,
-            startAngle: .degrees(0),
-            endAngle: .degrees(90),
-            clockwise: false
-        )
-        // Bottom edge
-        p.addLine(to: CGPoint(x: r.minX + br, y: r.maxY))
-        // Bottom-left corner (large)
-        p.addArc(
-            center: CGPoint(x: r.minX + br, y: r.maxY - br),
-            radius: br,
-            startAngle: .degrees(90),
-            endAngle: .degrees(180),
-            clockwise: false
-        )
-        // Left edge
-        p.addLine(to: CGPoint(x: r.minX, y: r.minY + tr))
-        if tr > 0 {
-            // Top-left corner (rounded)
+        p.addLine(to: CGPoint(x: r.minX + bottomRadius, y: r.maxY))
+        if bottomRadius > 0 {
             p.addArc(
-                center: CGPoint(x: r.minX + tr, y: r.minY + tr),
-                radius: tr,
-                startAngle: .degrees(180),
-                endAngle: .degrees(270),
+                center: CGPoint(x: r.minX + bottomRadius, y: r.maxY - bottomRadius),
+                radius: bottomRadius,
+                startAngle: .degrees(90),
+                endAngle: .degrees(180),
                 clockwise: false
             )
         } else {
-            // Top-left corner (square)
-            p.addLine(to: CGPoint(x: r.minX, y: r.minY))
+            p.addLine(to: CGPoint(x: r.minX, y: r.maxY))
         }
+
+        p.addLine(to: CGPoint(x: r.minX, y: r.minY))
         p.closeSubpath()
 
         return p
@@ -95,13 +88,13 @@ private struct NotchShape: InsettableShape {
 
 struct OverlayView: View {
     @ObservedObject var model: PrompterModel
+    @State private var isHovering: Bool = false
 
     var body: some View {
-        // Make the top feel like it blends into the notch by:
-        // - using a smaller top radius (less "pill" look)
-        // - avoiding bright borders right at the top edge
-        let shape = NotchShape(topRadius: 0, bottomRadius: 22)
-        let hideTopStrokeHeight: CGFloat = 3
+        // Ratio-driven contour tuned to Apple notch geometry and scaled to the
+        // current overlay dimensions.
+        let shape = AppleNotchShape()
+        let hideTopStrokeHeight: CGFloat = 2
 
         ZStack {
             VisualEffectView(material: .hudWindow, blendingMode: .withinWindow)
@@ -122,30 +115,27 @@ struct OverlayView: View {
                     }
                 )
 
+            // The scroller is hard-clipped (so text truly "cuts off") and we add
+            // subtle blur bands at the top/bottom to soften the exit.
             ScrollingTextView(
                 text: model.script,
                 fontSize: CGFloat(model.fontSize),
                 speedPointsPerSecond: model.speedPointsPerSecond,
                 isRunning: model.isRunning,
-                resetToken: model.resetToken
+                resetToken: model.resetToken,
+                fadeFraction: CGFloat(model.edgeFadeFraction),
+                isHovering: isHovering
             )
             .padding(.horizontal, 18)
-            .padding(.top, 40) // Clearance for notch (approx 32pt) + padding
-            .padding(.bottom, 12)
-            .mask(
-                LinearGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .black, location: 0.15),
-                        .init(color: .black, location: 0.85),
-                        .init(color: .clear, location: 1)
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+            .padding(.top, 36) // Clearance for notch (approx 32pt) + minimal padding
+            .padding(.bottom, 8)
+            .clipShape(Rectangle())
         }
         .frame(width: model.overlayWidth, height: model.overlayHeight)
+        .onHover { hovering in
+            isHovering = hovering
+            model.isHovering = hovering
+        }
     }
 }
 
