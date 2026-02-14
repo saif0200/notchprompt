@@ -13,6 +13,8 @@ struct ScrollingTextView: View {
     let speedPointsPerSecond: Double
     let isRunning: Bool
     let resetToken: UUID
+    let jumpBackToken: UUID
+    let jumpBackDistancePoints: CGFloat
     let fadeFraction: CGFloat
     let isHovering: Bool
 
@@ -29,6 +31,10 @@ struct ScrollingTextView: View {
 
     private var hasContent: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var emptyStateMessage: String {
+        "No script yet.\nOpen Settings and paste your script to begin."
     }
 
     private var clampedFadeFraction: CGFloat {
@@ -65,7 +71,12 @@ struct ScrollingTextView: View {
                         }
                         .offset(y: effectiveOffsetY)
                     } else {
-                        Color.clear
+                        Text(emptyStateMessage)
+                            .font(.system(size: max(fontSize * 0.72, 13), weight: .regular, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                            .padding(.horizontal, 12)
                     }
                 }
                 .frame(width: viewportProxy.size.width, height: viewportProxy.size.height, alignment: .topLeading)
@@ -77,6 +88,10 @@ struct ScrollingTextView: View {
                 }
                 .onChange(of: text) { _ in
                     resetPhase()
+                }
+                .onChange(of: jumpBackToken) { _ in
+                    guard hasContent else { return }
+                    phase = max(phase - max(0, jumpBackDistancePoints), 0)
                 }
                 .onChange(of: fontSize) { _ in
                     resetPhase()

@@ -19,17 +19,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     private var startPauseItem: NSMenuItem?
     private var clickThroughItem: NSMenuItem?
+    private var localKeyMonitor: Any?
+    private var globalKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        model.loadFromDefaults()
         overlayController = OverlayWindowController(model: model)
         // Default behavior: always show and always cover the notch / menu bar area.
         overlayController?.setVisible(true)
 
         wireModel()
         setupStatusBar()
+        setupKeyboardShortcuts()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        model.saveToDefaults()
+        if let localKeyMonitor {
+            NSEvent.removeMonitor(localKeyMonitor)
+            self.localKeyMonitor = nil
+        }
+        if let globalKeyMonitor {
+            NSEvent.removeMonitor(globalKeyMonitor)
+            self.globalKeyMonitor = nil
+        }
         cancellables.removeAll()
     }
 
@@ -57,6 +70,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 self?.overlayController?.reposition()
             }
             .store(in: &cancellables)
+
+        Publishers.MergeMany(
+            model.$script.map { _ in () }.eraseToAnyPublisher(),
+            model.$isRunning.map { _ in () }.eraseToAnyPublisher(),
+            model.$isClickThrough.map { _ in () }.eraseToAnyPublisher(),
+            model.$speedPointsPerSecond.map { _ in () }.eraseToAnyPublisher(),
+            model.$fontSize.map { _ in () }.eraseToAnyPublisher(),
+            model.$overlayWidth.map { _ in () }.eraseToAnyPublisher(),
+            model.$overlayHeight.map { _ in () }.eraseToAnyPublisher(),
+            model.$countdownSeconds.map { _ in () }.eraseToAnyPublisher()
+        )
+        .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+        .sink { [weak self] in
+            self?.model.saveToDefaults()
+        }
+        .store(in: &cancellables)
     }
 
     private func setupStatusBar() {
@@ -66,19 +95,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         let menu = NSMenu()
 
-        let startPause = NSMenuItem(title: "Start", action: #selector(toggleRunning), keyEquivalent: "s")
+        let startPause = NSMenuItem(title: "Start/Pause (Opt+Cmd+P)", action: #selector(toggleRunning), keyEquivalent: "s")
         startPause.target = self
         menu.addItem(startPause)
         startPauseItem = startPause
 
-        let reset = NSMenuItem(title: "Reset Scroll", action: #selector(resetScroll), keyEquivalent: "r")
+        let reset = NSMenuItem(title: "Reset Scroll (Opt+Cmd+R)", action: #selector(resetScroll), keyEquivalent: "r")
         reset.target = self
         menu.addItem(reset)
+
+        let jumpBack = NSMenuItem(title: "Jump Back 5s (Opt+Cmd+J)", action: #selector(jumpBack), keyEquivalent: "j")
+        jumpBack.target = self
+        menu.addItem(jumpBack)
 
         let clickThrough = NSMenuItem(title: "Click-Through", action: #selector(toggleClickThrough), keyEquivalent: "c")
         clickThrough.target = self
         menu.addItem(clickThrough)
         clickThroughItem = clickThrough
+
+        menu.addItem(.separator())
+
+        let importScript = NSMenuItem(title: "Import Script...", action: #selector(importScriptFromMenu), keyEquivalent: "i")
+        importScript.target = self
+        menu.addItem(importScript)
+
+        let exportScript = NSMenuItem(title: "Export Script...", action: #selector(exportScriptFromMenu), keyEquivalent: "e")
+        exportScript.target = self
+        menu.addItem(exportScript)
 
         menu.addItem(.separator())
 
@@ -99,15 +142,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // MARK: - Actions
 
     @objc private func toggleRunning() {
-        model.isRunning.toggle()
+        model.toggleRunning()
     }
 
     @objc private func resetScroll() {
         model.resetScroll()
     }
 
+    @objc private func jumpBack() {
+        model.jumpBack(seconds: 5)
+    }
+
     @objc private func toggleClickThrough() {
         model.isClickThrough.toggle()
+    }
+
+    @objc private func importScriptFromMenu() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let hostWindow = self.ensureHostWindow()
+            let url = await FilePanelCoordinator.presentImportPanel(from: hostWindow)
+            guard let url else { return }
+
+            do {
+                let text = try await ScriptFileIO.importText(from: url)
+                self.model.script = text
+            } catch {
+                self.presentFileError(error, on: hostWindow)
+            }
+        }
+    }
+
+    @objc private func exportScriptFromMenu() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let hostWindow = self.ensureHostWindow()
+            let url = await FilePanelCoordinator.presentExportPanel(from: hostWindow)
+            guard let url else { return }
+
+            do {
+                try await ScriptFileIO.exportText(self.model.script, to: url)
+            } catch {
+                self.presentFileError(error, on: hostWindow)
+            }
+        }
     }
 
     @objc private func openMainWindow() {
@@ -123,11 +201,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.terminate(nil)
     }
 
+    @MainActor
+    private func ensureHostWindow() -> NSWindow? {
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController()
+        }
+        settingsWindowController?.show()
+        return settingsWindowController?.window
+    }
+
+    @MainActor
+    private func presentFileError(_ error: Error, on window: NSWindow?) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "File Operation Failed"
+        alert.informativeText = error.localizedDescription
+        alert.addButton(withTitle: "OK")
+        if let window {
+            alert.beginSheetModal(for: window, completionHandler: nil)
+        } else {
+            NSApp.presentError(error)
+        }
+    }
+
+    private func setupKeyboardShortcuts() {
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if self?.handleShortcut(event) == true {
+                return nil
+            }
+            return event
+        }
+
+        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            _ = self?.handleShortcut(event)
+        }
+    }
+
+    @discardableResult
+    private func handleShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let required: NSEvent.ModifierFlags = [.command, .option]
+        guard flags.contains(required) else { return false }
+
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "p":
+            model.toggleRunning()
+            return true
+        case "r":
+            model.resetScroll()
+            return true
+        case "j":
+            model.jumpBack(seconds: 5)
+            return true
+        case "=":
+            model.adjustSpeed(delta: PrompterModel.speedStep)
+            return true
+        case "-":
+            model.adjustSpeed(delta: -PrompterModel.speedStep)
+            return true
+        default:
+            return false
+        }
+    }
+
     // MARK: - Menu Validation
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem === startPauseItem {
-            menuItem.title = model.isRunning ? "Pause" : "Start"
+            menuItem.title = model.isRunning ? "Pause (Opt+Cmd+P)" : "Start (Opt+Cmd+P)"
             return true
         }
 

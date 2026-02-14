@@ -123,6 +123,8 @@ struct OverlayView: View {
                 speedPointsPerSecond: model.speedPointsPerSecond,
                 isRunning: model.isRunning,
                 resetToken: model.resetToken,
+                jumpBackToken: model.jumpBackToken,
+                jumpBackDistancePoints: model.jumpBackDistancePoints,
                 fadeFraction: CGFloat(model.edgeFadeFraction),
                 isHovering: isHovering
             )
@@ -130,6 +132,17 @@ struct OverlayView: View {
             .padding(.top, 36) // Clearance for notch (approx 32pt) + minimal padding
             .padding(.bottom, 8)
             .clipShape(Rectangle())
+
+            if model.isCountingDown {
+                ZStack {
+                    Color.black.opacity(0.36)
+                    Text("\(model.countdownRemaining)")
+                        .font(.system(size: 42, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                }
+                .clipShape(shape)
+                .allowsHitTesting(false)
+            }
         }
         .frame(width: model.overlayWidth, height: model.overlayHeight)
         .onHover { hovering in
