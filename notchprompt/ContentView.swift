@@ -17,7 +17,6 @@ struct ContentView: View {
             Text("Notchprompt")
                 .font(.system(size: 18, weight: .semibold))
 
-            Toggle("Click-through overlay (no cursor blocking)", isOn: $model.isClickThrough)
             Toggle("Privacy mode (limit screen sharing capture)", isOn: $model.privacyModeEnabled)
 
             Text("Best-effort only. Capture behavior can vary by app.")

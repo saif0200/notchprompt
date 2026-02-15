@@ -20,7 +20,6 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
 """
 
     @Published var isRunning: Bool = false
-    @Published var isClickThrough: Bool = true
     @Published var privacyModeEnabled: Bool = true
     @Published private(set) var hasStartedSession: Bool = false
     @Published private(set) var isCountingDown: Bool = false
@@ -52,7 +51,6 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         static let hasSavedSession = "hasSavedSession"
         static let script = "script"
         static let isRunning = "isRunning"
-        static let isClickThrough = "isClickThrough"
         static let privacyModeEnabled = "privacyModeEnabled"
         static let speed = "speedPointsPerSecond"
         static let fontSize = "fontSize"
@@ -155,7 +153,6 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
             script = savedScript
         }
 
-        isClickThrough = defaults.object(forKey: DefaultsKey.isClickThrough) as? Bool ?? isClickThrough
         privacyModeEnabled = defaults.object(forKey: DefaultsKey.privacyModeEnabled) as? Bool ?? privacyModeEnabled
         // Never auto-start on launch; require explicit user start each session.
         isRunning = false
@@ -174,7 +171,6 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         defaults.set(true, forKey: DefaultsKey.hasSavedSession)
         defaults.set(script, forKey: DefaultsKey.script)
         defaults.set(isRunning, forKey: DefaultsKey.isRunning)
-        defaults.set(isClickThrough, forKey: DefaultsKey.isClickThrough)
         defaults.set(privacyModeEnabled, forKey: DefaultsKey.privacyModeEnabled)
         defaults.set(speedPointsPerSecond, forKey: DefaultsKey.speed)
         defaults.set(fontSize, forKey: DefaultsKey.fontSize)

@@ -18,7 +18,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var cancellables: Set<AnyCancellable> = []
 
     private var startPauseItem: NSMenuItem?
-    private var clickThroughItem: NSMenuItem?
     private var privacyModeItem: NSMenuItem?
     private var localKeyMonitor: Any?
     private var globalKeyMonitor: Any?
@@ -48,13 +47,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     private func wireModel() {
-        model.$isClickThrough
-            .receive(on: RunLoop.main)
-            .sink { [weak self] isClickThrough in
-                self?.overlayController?.setClickThrough(isClickThrough)
-            }
-            .store(in: &cancellables)
-
         model.$privacyModeEnabled
             .receive(on: RunLoop.main)
             .sink { [weak self] enabled in
@@ -86,7 +78,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         Publishers.MergeMany(
             model.$script.map { _ in () }.eraseToAnyPublisher(),
             model.$isRunning.map { _ in () }.eraseToAnyPublisher(),
-            model.$isClickThrough.map { _ in () }.eraseToAnyPublisher(),
             model.$privacyModeEnabled.map { _ in () }.eraseToAnyPublisher(),
             model.$speedPointsPerSecond.map { _ in () }.eraseToAnyPublisher(),
             model.$fontSize.map { _ in () }.eraseToAnyPublisher(),
@@ -120,11 +111,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let jumpBack = NSMenuItem(title: "Jump Back 5s (Opt+Cmd+J)", action: #selector(jumpBack), keyEquivalent: "j")
         jumpBack.target = self
         menu.addItem(jumpBack)
-
-        let clickThrough = NSMenuItem(title: "Click-Through", action: #selector(toggleClickThrough), keyEquivalent: "c")
-        clickThrough.target = self
-        menu.addItem(clickThrough)
-        clickThroughItem = clickThrough
 
         let privacyMode = NSMenuItem(title: "Privacy Mode", action: #selector(togglePrivacyMode), keyEquivalent: "h")
         privacyMode.target = self
@@ -170,10 +156,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func jumpBack() {
         model.jumpBack(seconds: 5)
-    }
-
-    @objc private func toggleClickThrough() {
-        model.isClickThrough.toggle()
     }
 
     @objc private func togglePrivacyMode() {
@@ -292,11 +274,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem === startPauseItem {
             menuItem.title = model.isRunning ? "Pause (Opt+Cmd+P)" : "Start (Opt+Cmd+P)"
-            return true
-        }
-
-        if menuItem === clickThroughItem {
-            menuItem.state = model.isClickThrough ? .on : .off
             return true
         }
 

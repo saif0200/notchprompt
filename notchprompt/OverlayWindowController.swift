@@ -42,7 +42,7 @@ final class OverlayWindowController {
         panel.hasShadow = false
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
-        panel.ignoresMouseEvents = model.isClickThrough
+        panel.ignoresMouseEvents = false
         panel.sharingType = model.privacyModeEnabled ? .none : .readOnly
 
         panel.contentView = hosting
@@ -116,17 +116,6 @@ final class OverlayWindowController {
             reason: "reposition-post",
             intendedScreen: screen,
             calc: Calc(width: width, height: height, padding: padding, x: x, y: y, topSafeY: topRefY)
-        )
-#endif
-    }
-
-    func setClickThrough(_ isClickThrough: Bool) {
-        panel.ignoresMouseEvents = isClickThrough
-#if DEBUG
-        debugDump(
-            reason: "setClickThrough isClickThrough=\(isClickThrough) ignoresMouseEvents=\(panel.ignoresMouseEvents)",
-            intendedScreen: Self.mainDisplayScreen(),
-            calc: nil
         )
 #endif
     }
