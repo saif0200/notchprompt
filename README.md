@@ -39,18 +39,31 @@ Native macOS notch-adjacent teleprompter for presentations and recordings.
 
 1. Open GitHub Releases:
    `https://github.com/saif0200/notchprompt/releases`
-2. Download `notchprompt-v1.0.0-macos.dmg` (or latest).
+2. Download the latest `.dmg` release asset.
 3. Open the DMG and drag `notchprompt.app` to `Applications`.
 4. Launch `notchprompt.app`.
 
 ### Unsigned Build Note
 
-If macOS shows `"notchprompt" is damaged and can’t be opened`, run:
+This build is currently unsigned/unnotarized, so macOS may show security prompts.
+
+If macOS shows:
+
+- `Apple could not verify "notchprompt" is free of malware...`
+- or `"notchprompt" is damaged and can’t be opened`
+
+run:
 
 ```bash
 xattr -cr /Applications/notchprompt.app
 open /Applications/notchprompt.app
 ```
+
+If it is still blocked:
+
+1. Open `System Settings -> Privacy & Security`.
+2. Click **Open Anyway** for `notchprompt`.
+3. Launch again.
 
 ## Keyboard Shortcuts
 
@@ -76,31 +89,6 @@ CLI build:
 ```bash
 xcodebuild -project notchprompt.xcodeproj -scheme notchprompt -configuration Debug build
 ```
-
-## Release (Maintainers)
-
-Build DMG locally:
-
-```bash
-./scripts/build_release_zip.sh v1.0.0
-```
-
-Output:
-
-- `dist/notchprompt-v1.0.0-macos.dmg`
-
-Publish/revise `v1.0.0`:
-
-```bash
-git tag -d v1.0.0
-git tag -a v1.0.0 -m "Revise v1.0.0 release"
-git push origin :refs/tags/v1.0.0
-git push origin v1.0.0
-```
-
-Workflow:
-
-- `.github/workflows/release.yml` builds and uploads the DMG when a `v*` tag is pushed.
 
 ## License
 
