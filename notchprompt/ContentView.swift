@@ -116,6 +116,14 @@ struct ContentView: View {
                     }
 
                     HStack {
+                        Text("Opacity")
+                            .frame(width: 72, alignment: .leading)
+                        Slider(value: $model.backgroundOpacity, in: 0.1...1.0, step: 0.05)
+                        Text("\(Int(model.backgroundOpacity * 100))%")
+                            .frame(width: 44, alignment: .trailing)
+                    }
+
+                    HStack {
                         Text("Countdown")
                             .frame(width: 72, alignment: .leading)
                         Slider(

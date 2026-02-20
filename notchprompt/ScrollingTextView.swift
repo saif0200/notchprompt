@@ -17,6 +17,7 @@ struct ScrollingTextView: View {
     let jumpBackToken: UUID
     let jumpBackDistancePoints: CGFloat
     let fadeFraction: CGFloat
+    let backgroundOpacity: Double
     let isHovering: Bool
     let scrollMode: PrompterModel.ScrollMode
     let onReachedEnd: (() -> Void)?
@@ -227,7 +228,7 @@ struct ScrollingTextView: View {
 
             VStack(spacing: 0) {
                 LinearGradient(
-                    colors: [Color.black.opacity(0.9), Color.black.opacity(0)],
+                    colors: [Color.black.opacity(backgroundOpacity * 0.9), Color.black.opacity(0)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -237,7 +238,7 @@ struct ScrollingTextView: View {
                 Spacer(minLength: 0)
 
                 LinearGradient(
-                    colors: [Color.black.opacity(0), Color.black.opacity(0.9)],
+                    colors: [Color.black.opacity(0), Color.black.opacity(backgroundOpacity * 0.9)],
                     startPoint: .top,
                     endPoint: .bottom
                 )

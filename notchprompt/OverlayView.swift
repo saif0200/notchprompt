@@ -102,7 +102,7 @@ struct OverlayView: View {
                 .opacity(0.0)
 
             shape
-                .fill(Color.notchBlack)
+                .fill(Color(.sRGB, red: 0, green: 0, blue: 0, opacity: model.backgroundOpacity))
 
             shape
                 .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
@@ -126,6 +126,7 @@ struct OverlayView: View {
                 jumpBackToken: model.jumpBackToken,
                 jumpBackDistancePoints: model.jumpBackDistancePoints,
                 fadeFraction: CGFloat(model.edgeFadeFraction),
+                backgroundOpacity: model.backgroundOpacity,
                 isHovering: false,
                 scrollMode: model.scrollMode,
                 onReachedEnd: {

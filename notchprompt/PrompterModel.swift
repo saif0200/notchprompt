@@ -37,6 +37,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
     @Published var fontSize: Double = 20
     @Published var overlayWidth: Double = 600
     @Published var overlayHeight: Double = 150
+    @Published var backgroundOpacity: Double = 1.0
     @Published var scrollMode: ScrollMode = .infinite
     // Fraction of the viewport height to fade at top and bottom.
     let edgeFadeFraction: Double = 0.20
@@ -63,6 +64,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         static let fontSize = "fontSize"
         static let overlayWidth = "overlayWidth"
         static let overlayHeight = "overlayHeight"
+        static let backgroundOpacity = "backgroundOpacity"
         static let countdownSeconds = "countdownSeconds"
         static let scrollMode = "scrollMode"
     }
@@ -208,6 +210,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         fontSize = clamp(defaults.object(forKey: DefaultsKey.fontSize) as? Double ?? fontSize, lower: 12, upper: 40)
         overlayWidth = clamp(defaults.object(forKey: DefaultsKey.overlayWidth) as? Double ?? overlayWidth, lower: 400, upper: 1200)
         overlayHeight = clamp(defaults.object(forKey: DefaultsKey.overlayHeight) as? Double ?? overlayHeight, lower: 120, upper: 300)
+        backgroundOpacity = clamp(defaults.object(forKey: DefaultsKey.backgroundOpacity) as? Double ?? backgroundOpacity, lower: 0.1, upper: 1.0)
         countdownSeconds = Int(clamp(Double(defaults.object(forKey: DefaultsKey.countdownSeconds) as? Int ?? countdownSeconds), lower: 0, upper: 10))
         if let rawValue = defaults.string(forKey: DefaultsKey.scrollMode),
            let savedMode = ScrollMode(rawValue: rawValue) {
@@ -227,6 +230,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         defaults.set(fontSize, forKey: DefaultsKey.fontSize)
         defaults.set(overlayWidth, forKey: DefaultsKey.overlayWidth)
         defaults.set(overlayHeight, forKey: DefaultsKey.overlayHeight)
+        defaults.set(backgroundOpacity, forKey: DefaultsKey.backgroundOpacity)
         defaults.set(countdownSeconds, forKey: DefaultsKey.countdownSeconds)
         defaults.set(scrollMode.rawValue, forKey: DefaultsKey.scrollMode)
     }
