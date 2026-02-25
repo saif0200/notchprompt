@@ -76,6 +76,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
             .store(in: &cancellables)
 
+        model.$targetScreenID
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.overlayController?.reposition()
+            }
+            .store(in: &cancellables)
+
         Publishers.MergeMany(
             model.$script.map { _ in () }.eraseToAnyPublisher(),
             model.$isRunning.map { _ in () }.eraseToAnyPublisher(),

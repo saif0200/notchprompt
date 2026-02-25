@@ -39,6 +39,8 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
     @Published var overlayHeight: Double = 150
     @Published var backgroundOpacity: Double = 1.0
     @Published var scrollMode: ScrollMode = .infinite
+    // 0 = auto (prefer built-in display); non-zero = specific CGDirectDisplayID chosen by user.
+    @Published var targetScreenID: UInt32 = 0
     // Fraction of the viewport height to fade at top and bottom.
     let edgeFadeFraction: Double = 0.20
 
@@ -67,6 +69,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         static let backgroundOpacity = "backgroundOpacity"
         static let countdownSeconds = "countdownSeconds"
         static let scrollMode = "scrollMode"
+        static let targetScreenID = "targetScreenID"
     }
 
     private init() {}
@@ -218,6 +221,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         } else {
             scrollMode = .infinite
         }
+        targetScreenID = UInt32(defaults.integer(forKey: DefaultsKey.targetScreenID))
     }
 
     func saveToDefaults() {
@@ -233,6 +237,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         defaults.set(backgroundOpacity, forKey: DefaultsKey.backgroundOpacity)
         defaults.set(countdownSeconds, forKey: DefaultsKey.countdownSeconds)
         defaults.set(scrollMode.rawValue, forKey: DefaultsKey.scrollMode)
+        defaults.set(Int(targetScreenID), forKey: DefaultsKey.targetScreenID)
     }
 
     private func beginCountdown(seconds: Int) {

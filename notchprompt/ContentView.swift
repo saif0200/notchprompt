@@ -8,9 +8,17 @@
 import SwiftUI
 import AppKit
 
+private extension NSScreen {
+    var displayID: CGDirectDisplayID? {
+        guard let n = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+        return CGDirectDisplayID(n.uint32Value)
+    }
+}
+
 struct ContentView: View {
     @ObservedObject private var model = PrompterModel.shared
     @State private var fileErrorMessage: String?
+    @State private var availableScreens: [NSScreen] = NSScreen.screens
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -155,8 +163,25 @@ struct ContentView: View {
                         .pickerStyle(.segmented)
                     }
 
+                    HStack {
+                        Text("Display")
+                            .frame(width: 72, alignment: .leading)
+                        Picker("", selection: $model.targetScreenID) {
+                            Text("Auto (Built-in)").tag(UInt32(0))
+                            ForEach(availableScreens, id: \.displayID) { screen in
+                                if let id = screen.displayID {
+                                    Text(screen.localizedName).tag(id)
+                                }
+                            }
+                        }
+                        .labelsHidden()
+                    }
+
                 }
                 .padding(.vertical, 4)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+                availableScreens = NSScreen.screens
             }
         }
         .padding()

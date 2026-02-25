@@ -76,9 +76,7 @@ final class OverlayWindowController {
     }
 
     func reposition() {
-        // Always place on the system "main display" (the one that owns the menu bar),
-        // not on an extended display.
-        guard let screen = Self.mainDisplayScreen() ?? NSScreen.main ?? NSScreen.screens.first else { return }
+        guard let screen = targetScreen() ?? NSScreen.main ?? NSScreen.screens.first else { return }
 
         let width = CGFloat(model.overlayWidth)
         let desiredHeight = CGFloat(model.overlayHeight)
@@ -137,7 +135,34 @@ final class OverlayWindowController {
 #endif
     }
 
+    private func targetScreen() -> NSScreen? {
+        let preferredID = model.targetScreenID
+        if preferredID != 0 {
+            // User picked a specific screen — find it by display ID.
+            let preferred = NSScreen.screens.first(where: { screen in
+                guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
+                return CGDirectDisplayID(n.uint32Value) == preferredID
+            })
+            if let preferred { return preferred }
+            // Preferred screen no longer connected — fall through to auto.
+        }
+        return Self.mainDisplayScreen()
+    }
+
     private static func mainDisplayScreen() -> NSScreen? {
+        // Prefer the built-in display — that's the MacBook screen that has the
+        // notch, regardless of which display the user has set as "main".
+        // This prevents the overlay from jumping to an external monitor when
+        // the user promotes it to main display (Issue #4).
+        let builtIn = NSScreen.screens.first(where: { screen in
+            guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+                return false
+            }
+            return CGDisplayIsBuiltin(CGDirectDisplayID(n.uint32Value)) != 0
+        })
+        if let builtIn { return builtIn }
+
+        // Fallback: use whichever screen owns the menu bar.
         let mainID = CGMainDisplayID()
         return NSScreen.screens.first(where: { screen in
             guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
