@@ -23,6 +23,8 @@ struct ScrollingTextView: View {
     let onReachedEnd: (() -> Void)?
 
     private static let loopGap: CGFloat = 24
+    private static let activeTickInterval: TimeInterval = 1.0 / 60.0
+    private static let idleTickInterval: TimeInterval = 1.0 / 8.0
 
     @State private var contentHeight: CGFloat = 1
     @State private var viewportHeight: CGFloat = 0
@@ -39,6 +41,14 @@ struct ScrollingTextView: View {
 
     private var hasContent: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    
+    private var isActivelyAnimating: Bool {
+        (isRunning && !isHovering && hasContent) || currentSpeedMultiplier > 0.002
+    }
+    
+    private var tickInterval: TimeInterval {
+        isActivelyAnimating ? Self.activeTickInterval : Self.idleTickInterval
     }
 
     private var emptyStateMessage: String {
@@ -106,7 +116,7 @@ struct ScrollingTextView: View {
 
     var body: some View {
         GeometryReader { viewportProxy in
-            TimelineView(.animation) { timeline in
+            TimelineView(.periodic(from: .now, by: tickInterval)) { timeline in
                 ZStack(alignment: .topLeading) {
                     if hasContent && hasStartedSession {
                         // Always render repeated copies so toggling between infinite
@@ -139,46 +149,46 @@ struct ScrollingTextView: View {
                     viewportHeight = max(viewportProxy.size.height, 0)
                     resetPhase()
                 }
-                .onChange(of: viewportProxy.size.height) { newHeight in
+                .onChange(of: viewportProxy.size.height) { _, newHeight in
                     viewportHeight = max(newHeight, 0)
                     normalizeTopAnchorIfNearStart()
                 }
-                .onChange(of: resetToken) { _ in
+                .onChange(of: resetToken) { _, _ in
                     deferredStopTargetPhase = nil
                     resetPhase()
                 }
-                .onChange(of: text) { _ in
+                .onChange(of: text) { _, _ in
                     hasMeasuredContentHeight = false
                     deferredStopTargetPhase = nil
                     resetPhase()
                 }
-                .onChange(of: jumpBackToken) { _ in
+                .onChange(of: jumpBackToken) { _, _ in
                     guard hasContent else { return }
                     hasReachedEndInStopMode = false
                     deferredStopTargetPhase = nil
                     phase = max(phase - max(0, jumpBackDistancePoints), topOfScriptPhaseFloor)
                 }
-                .onChange(of: fontSize) { _ in
+                .onChange(of: fontSize) { _, _ in
                     normalizeTopAnchorIfNearStart()
                 }
-                .onChange(of: scrollMode) { _ in
+                .onChange(of: scrollMode) { _, _ in
                     hasReachedEndInStopMode = false
                     // Clear any stale target; tick() will lazily recompute on the
                     // very first frame it runs in the new mode, avoiding the race
                     // where tick fires before this handler.
                     deferredStopTargetPhase = nil
                 }
-                .onChange(of: isRunning) { _ in
+                .onChange(of: isRunning) { _, _ in
                     lastTickDate = timeline.date
                 }
-                .onChange(of: isHovering) { _ in
+                .onChange(of: isHovering) { _, _ in
                     lastTickDate = timeline.date
                 }
                 .onPreferenceChange(ContentHeightPreferenceKey.self) { measured in
                     contentHeight = max(measured, 1)
                     hasMeasuredContentHeight = measured > 1
                 }
-                .onChange(of: timeline.date) { date in
+                .onChange(of: timeline.date) { _, date in
                     tick(at: date)
                 }
             }
@@ -283,14 +293,14 @@ struct ScrollingTextView: View {
         if let lastTickDate {
             totalDt = max(0, min(CGFloat(date.timeIntervalSince(lastTickDate)), 0.25))
         } else {
-            totalDt = 1.0 / 120.0
+            totalDt = CGFloat(Self.activeTickInterval)
         }
 
         self.lastTickDate = date
 
         // Integrate in short fixed steps to avoid jitter/jumps at very slow/fast speeds.
         var remaining = totalDt
-        let maxStep: CGFloat = 1.0 / 120.0
+        let maxStep: CGFloat = CGFloat(Self.activeTickInterval)
 
         while remaining > 0 {
             let step = min(remaining, maxStep)
