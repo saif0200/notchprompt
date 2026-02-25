@@ -16,9 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var statusItem: NSStatusItem?
     private var overlayController: OverlayWindowController?
     private var settingsWindowController: SettingsWindowController?
+    private var scriptEditorWindowController: ScriptEditorWindowController?
     private var cancellables: Set<AnyCancellable> = []
 
     private var startPauseItem: NSMenuItem?
+    private var showOverlayItem: NSMenuItem?
     private var privacyModeItem: NSMenuItem?
     private var localKeyMonitor: Any?
     private var globalKeyMonitor: Any?
@@ -26,8 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationDidFinishLaunching(_ notification: Notification) {
         model.loadFromDefaults()
         overlayController = OverlayWindowController(model: model)
-        // Default behavior: always show and always cover the notch / menu bar area.
-        overlayController?.setVisible(true)
+        overlayController?.setVisible(model.isOverlayVisible)
+
+#if DEBUG
+        ScreenSelectionSelfTests.run()
+#endif
 
         wireModel()
         setupStatusBar()
@@ -54,6 +59,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 self?.overlayController?.setPrivacyMode(enabled)
             }
             .store(in: &cancellables)
+        
+        model.$isOverlayVisible
+            .receive(on: RunLoop.main)
+            .sink { [weak self] isVisible in
+                self?.overlayController?.setVisible(isVisible)
+            }
+            .store(in: &cancellables)
 
         Publishers.CombineLatest(model.$overlayWidth, model.$overlayHeight)
             .removeDuplicates { lhs, rhs in
@@ -62,6 +74,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             .throttle(for: .milliseconds(16), scheduler: RunLoop.main, latest: true)
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _ in
+                self?.overlayController?.reposition()
+            }
+            .store(in: &cancellables)
+
+        model.$selectedScreenID
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
                 self?.overlayController?.reposition()
             }
             .store(in: &cancellables)
@@ -84,9 +104,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             model.$fontSize.map { _ in () }.eraseToAnyPublisher(),
             model.$overlayWidth.map { _ in () }.eraseToAnyPublisher(),
             model.$overlayHeight.map { _ in () }.eraseToAnyPublisher(),
-            model.$backgroundOpacity.map { _ in () }.eraseToAnyPublisher(),
             model.$countdownSeconds.map { _ in () }.eraseToAnyPublisher(),
-            model.$scrollMode.map { _ in () }.eraseToAnyPublisher()
+            model.$countdownBehavior.map { _ in () }.eraseToAnyPublisher(),
+            model.$scrollMode.map { _ in () }.eraseToAnyPublisher(),
+            model.$selectedScreenID.map { _ in () }.eraseToAnyPublisher()
         )
         .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
         .sink { [weak self] in
@@ -123,16 +144,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         privacyMode.keyEquivalentModifierMask = [.option, .command]
         menu.addItem(privacyMode)
         privacyModeItem = privacyMode
+        
+        let showOverlay = NSMenuItem(title: "Show Overlay (Opt+Cmd+O)", action: #selector(toggleOverlayVisibility), keyEquivalent: "o")
+        showOverlay.target = self
+        showOverlay.keyEquivalentModifierMask = [.option, .command]
+        menu.addItem(showOverlay)
+        showOverlayItem = showOverlay
 
         menu.addItem(.separator())
 
-        let importScript = NSMenuItem(title: "Import Script...", action: #selector(importScriptFromMenu), keyEquivalent: "i")
-        importScript.target = self
-        menu.addItem(importScript)
-
-        let exportScript = NSMenuItem(title: "Export Script...", action: #selector(exportScriptFromMenu), keyEquivalent: "e")
-        exportScript.target = self
-        menu.addItem(exportScript)
+        let openScriptEditor = NSMenuItem(title: "Script Editor…", action: #selector(openScriptEditorWindow), keyEquivalent: "e")
+        openScriptEditor.target = self
+        menu.addItem(openScriptEditor)
 
         menu.addItem(.separator())
 
@@ -167,36 +190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc private func togglePrivacyMode() {
         model.privacyModeEnabled.toggle()
     }
-
-    @objc private func importScriptFromMenu() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let hostWindow = self.ensureHostWindow()
-            let url = await FilePanelCoordinator.presentImportPanel(from: hostWindow)
-            guard let url else { return }
-
-            do {
-                let text = try await ScriptFileIO.importText(from: url)
-                self.model.script = text
-            } catch {
-                self.presentFileError(error, on: hostWindow)
-            }
-        }
-    }
-
-    @objc private func exportScriptFromMenu() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let hostWindow = self.ensureHostWindow()
-            let url = await FilePanelCoordinator.presentExportPanel(from: hostWindow)
-            guard let url else { return }
-
-            do {
-                try await ScriptFileIO.exportText(self.model.script, to: url)
-            } catch {
-                self.presentFileError(error, on: hostWindow)
-            }
-        }
+    
+    @objc private func toggleOverlayVisibility() {
+        model.isOverlayVisible.toggle()
     }
 
     @objc private func openMainWindow() {
@@ -207,32 +203,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             settingsWindowController?.show()
         }
     }
+    
+    @objc private func openScriptEditorWindow() {
+        Task { @MainActor in
+            if scriptEditorWindowController == nil {
+                scriptEditorWindowController = ScriptEditorWindowController()
+            }
+            scriptEditorWindowController?.show()
+        }
+    }
 
     @objc private func quitApp() {
         NSApp.terminate(nil)
-    }
-
-    @MainActor
-    private func ensureHostWindow() -> NSWindow? {
-        if settingsWindowController == nil {
-            settingsWindowController = SettingsWindowController()
-        }
-        settingsWindowController?.show()
-        return settingsWindowController?.window
-    }
-
-    @MainActor
-    private func presentFileError(_ error: Error, on window: NSWindow?) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "File Operation Failed"
-        alert.informativeText = error.localizedDescription
-        alert.addButton(withTitle: "OK")
-        if let window {
-            alert.beginSheetModal(for: window, completionHandler: nil)
-        } else {
-            NSApp.presentError(error)
-        }
     }
 
     private func setupKeyboardShortcuts() {
@@ -264,6 +246,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "j":
             model.jumpBack(seconds: 5)
             return true
+        case "o":
+            model.isOverlayVisible.toggle()
+            return true
         case "=":
             model.adjustSpeed(delta: PrompterModel.speedStep)
             return true
@@ -285,6 +270,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         if menuItem === privacyModeItem {
             menuItem.state = model.privacyModeEnabled ? .on : .off
+            return true
+        }
+        
+        if menuItem === showOverlayItem {
+            menuItem.state = model.isOverlayVisible ? .on : .off
             return true
         }
 

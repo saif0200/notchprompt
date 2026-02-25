@@ -44,6 +44,7 @@ final class OverlayWindowController {
         // panel.isFloatingPanel = true // This overrides level to .floating (3)
         panel.isOpaque = false
         panel.backgroundColor = .clear
+        panel.alphaValue = 1.0
         panel.hasShadow = false
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
@@ -57,13 +58,13 @@ final class OverlayWindowController {
         reposition()
 
 #if DEBUG
-        debugDump(reason: "init-after-reposition", intendedScreen: Self.mainDisplayScreen(), calc: nil)
+        debugDump(reason: "init-after-reposition", intendedScreen: targetScreen(), calc: nil)
 #endif
     }
 
     func setVisible(_ isVisible: Bool) {
 #if DEBUG
-        debugDump(reason: "setVisible-before isVisible=\(isVisible)", intendedScreen: Self.mainDisplayScreen(), calc: nil)
+        debugDump(reason: "setVisible-before isVisible=\(isVisible)", intendedScreen: targetScreen(), calc: nil)
 #endif
         if isVisible {
             panel.makeKeyAndOrderFront(nil)
@@ -71,14 +72,12 @@ final class OverlayWindowController {
             panel.orderOut(nil)
         }
 #if DEBUG
-        debugDump(reason: "setVisible-after isVisible=\(isVisible)", intendedScreen: Self.mainDisplayScreen(), calc: nil)
+        debugDump(reason: "setVisible-after isVisible=\(isVisible)", intendedScreen: targetScreen(), calc: nil)
 #endif
     }
 
     func reposition() {
-        // Always place on the system "main display" (the one that owns the menu bar),
-        // not on an extended display.
-        guard let screen = Self.mainDisplayScreen() ?? NSScreen.main ?? NSScreen.screens.first else { return }
+        guard let screen = targetScreen() ?? NSScreen.main ?? NSScreen.screens.first else { return }
 
         let width = CGFloat(model.overlayWidth)
         let desiredHeight = CGFloat(model.overlayHeight)
@@ -116,6 +115,7 @@ final class OverlayWindowController {
         
         // Ensure level is re-applied in case something reset it
         panel.level = .screenSaver
+        panel.alphaValue = 1.0
 
 #if DEBUG
         debugDump(
@@ -131,20 +131,39 @@ final class OverlayWindowController {
 #if DEBUG
         debugDump(
             reason: "setPrivacyMode enabled=\(enabled) sharingType=\(panel.sharingType.rawValue)",
-            intendedScreen: Self.mainDisplayScreen(),
+            intendedScreen: targetScreen(),
             calc: nil
         )
 #endif
     }
 
-    private static func mainDisplayScreen() -> NSScreen? {
-        let mainID = CGMainDisplayID()
-        return NSScreen.screens.first(where: { screen in
-            guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
-                return false
-            }
-            return CGDirectDisplayID(n.uint32Value) == mainID
-        })
+    private func targetScreen() -> NSScreen? {
+        let screens = NSScreen.screens
+        let descriptors = screens.compactMap { screen -> ScreenDescriptor? in
+            guard let id = displayID(for: screen) else { return nil }
+            return ScreenDescriptor(
+                id: id,
+                localizedName: screen.localizedName,
+                isBuiltIn: CGDisplayIsBuiltin(id) != 0,
+                isMenuBarScreen: id == CGMainDisplayID()
+            )
+        }
+
+        guard let targetID = ScreenSelection.chooseScreenID(
+            selectedScreenID: model.selectedScreenID,
+            screens: descriptors
+        ) else {
+            return nil
+        }
+
+        return screens.first(where: { displayID(for: $0) == targetID })
+    }
+
+    private func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+            return nil
+        }
+        return CGDirectDisplayID(n.uint32Value)
     }
 }
 

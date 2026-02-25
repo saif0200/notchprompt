@@ -15,6 +15,23 @@ final class PrompterModel: ObservableObject {
         case infinite
         case stopAtEnd
     }
+    
+    enum CountdownBehavior: String, CaseIterable {
+        case always
+        case freshStartOnly
+        case never
+        
+        var label: String {
+            switch self {
+            case .always:
+                return "Always"
+            case .freshStartOnly:
+                return "Fresh start only"
+            case .never:
+                return "Never"
+            }
+        }
+    }
 
     static let shared = PrompterModel()
 
@@ -25,10 +42,12 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
 """
 
     @Published var isRunning: Bool = false
+    @Published var isOverlayVisible: Bool = true
     @Published var privacyModeEnabled: Bool = true
     @Published private(set) var hasStartedSession: Bool = false
     @Published private(set) var isCountingDown: Bool = false
     @Published var countdownSeconds: Int = 3
+    @Published var countdownBehavior: CountdownBehavior = .freshStartOnly
     @Published private(set) var countdownRemaining: Int = 0
     @Published private(set) var didReachEndInStopMode: Bool = false
 
@@ -37,8 +56,11 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
     @Published var fontSize: Double = 20
     @Published var overlayWidth: Double = 600
     @Published var overlayHeight: Double = 150
+    // Deprecated user setting: keep as a fixed constant unless changed explicitly in code.
     @Published var backgroundOpacity: Double = 1.0
     @Published var scrollMode: ScrollMode = .infinite
+    /// 0 means "auto" (prefer built-in display)
+    @Published var selectedScreenID: CGDirectDisplayID = 0
     // Fraction of the viewport height to fade at top and bottom.
     let edgeFadeFraction: Double = 0.20
 
@@ -48,6 +70,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
     @Published private(set) var jumpBackDistancePoints: CGFloat = 0
 
     private var countdownTask: Task<Void, Never>?
+    private var shouldUseCountdownOnNextStart: Bool = true
 
     static let speedRange: ClosedRange<Double> = 10...300
     static let speedStep: Double = 5
@@ -59,14 +82,16 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         static let hasSavedSession = "hasSavedSession"
         static let script = "script"
         static let isRunning = "isRunning"
+        static let isOverlayVisible = "isOverlayVisible"
         static let privacyModeEnabled = "privacyModeEnabled"
         static let speed = "speedPointsPerSecond"
         static let fontSize = "fontSize"
         static let overlayWidth = "overlayWidth"
         static let overlayHeight = "overlayHeight"
-        static let backgroundOpacity = "backgroundOpacity"
         static let countdownSeconds = "countdownSeconds"
+        static let countdownBehavior = "countdownBehavior"
         static let scrollMode = "scrollMode"
+        static let selectedScreenID = "selectedScreenID"
     }
 
     private init() {}
@@ -77,6 +102,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
 
     func resetScroll() {
         didReachEndInStopMode = false
+        shouldUseCountdownOnNextStart = true
         resetToken = UUID()
     }
 
@@ -106,12 +132,21 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         }
 
         let delay = max(0, countdownSeconds)
-        guard delay > 0 else {
-            hasStartedSession = true
-            isRunning = true
+        let shouldRunCountdown: Bool
+        switch countdownBehavior {
+        case .always:
+            shouldRunCountdown = delay > 0
+        case .freshStartOnly:
+            shouldRunCountdown = delay > 0 && shouldUseCountdownOnNextStart
+        case .never:
+            shouldRunCountdown = false
+        }
+        
+        guard shouldRunCountdown else {
+            beginRunningNow()
             return
         }
-
+        
         beginCountdown(seconds: delay)
     }
 
@@ -139,6 +174,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
                     self.countdownRemaining = 0
                     self.countdownTask?.cancel()
                     self.countdownTask = nil
+                    self.shouldUseCountdownOnNextStart = false
                     self.isRunning = true
                 }
             }
@@ -201,23 +237,34 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         }
 
         privacyModeEnabled = defaults.object(forKey: DefaultsKey.privacyModeEnabled) as? Bool ?? privacyModeEnabled
+        isOverlayVisible = defaults.object(forKey: DefaultsKey.isOverlayVisible) as? Bool ?? true
         // Never auto-start on launch; require explicit user start each session.
         isRunning = false
         isCountingDown = false
         countdownRemaining = 0
         hasStartedSession = false
+        shouldUseCountdownOnNextStart = true
         speedPointsPerSecond = clampedSpeed(defaults.object(forKey: DefaultsKey.speed) as? Double ?? speedPointsPerSecond)
         fontSize = clamp(defaults.object(forKey: DefaultsKey.fontSize) as? Double ?? fontSize, lower: 12, upper: 40)
         overlayWidth = clamp(defaults.object(forKey: DefaultsKey.overlayWidth) as? Double ?? overlayWidth, lower: 400, upper: 1200)
         overlayHeight = clamp(defaults.object(forKey: DefaultsKey.overlayHeight) as? Double ?? overlayHeight, lower: 120, upper: 300)
-        backgroundOpacity = clamp(defaults.object(forKey: DefaultsKey.backgroundOpacity) as? Double ?? backgroundOpacity, lower: 0.1, upper: 1.0)
+        // Opacity UI has been removed; always render fully opaque by default.
+        backgroundOpacity = 1.0
+        defaults.removeObject(forKey: "backgroundOpacity")
         countdownSeconds = Int(clamp(Double(defaults.object(forKey: DefaultsKey.countdownSeconds) as? Int ?? countdownSeconds), lower: 0, upper: 10))
+        if let rawValue = defaults.string(forKey: DefaultsKey.countdownBehavior),
+           let savedBehavior = CountdownBehavior(rawValue: rawValue) {
+            countdownBehavior = savedBehavior
+        } else {
+            countdownBehavior = .freshStartOnly
+        }
         if let rawValue = defaults.string(forKey: DefaultsKey.scrollMode),
            let savedMode = ScrollMode(rawValue: rawValue) {
             scrollMode = savedMode
         } else {
             scrollMode = .infinite
         }
+        selectedScreenID = CGDirectDisplayID(defaults.object(forKey: DefaultsKey.selectedScreenID) as? UInt32 ?? 0)
     }
 
     func saveToDefaults() {
@@ -225,14 +272,16 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         defaults.set(true, forKey: DefaultsKey.hasSavedSession)
         defaults.set(script, forKey: DefaultsKey.script)
         defaults.set(isRunning, forKey: DefaultsKey.isRunning)
+        defaults.set(isOverlayVisible, forKey: DefaultsKey.isOverlayVisible)
         defaults.set(privacyModeEnabled, forKey: DefaultsKey.privacyModeEnabled)
         defaults.set(speedPointsPerSecond, forKey: DefaultsKey.speed)
         defaults.set(fontSize, forKey: DefaultsKey.fontSize)
         defaults.set(overlayWidth, forKey: DefaultsKey.overlayWidth)
         defaults.set(overlayHeight, forKey: DefaultsKey.overlayHeight)
-        defaults.set(backgroundOpacity, forKey: DefaultsKey.backgroundOpacity)
         defaults.set(countdownSeconds, forKey: DefaultsKey.countdownSeconds)
+        defaults.set(countdownBehavior.rawValue, forKey: DefaultsKey.countdownBehavior)
         defaults.set(scrollMode.rawValue, forKey: DefaultsKey.scrollMode)
+        defaults.set(selectedScreenID, forKey: DefaultsKey.selectedScreenID)
     }
 
     private func beginCountdown(seconds: Int) {
@@ -256,12 +305,17 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
             }
 
             guard !Task.isCancelled else { return }
-            isCountingDown = false
-            countdownRemaining = 0
-            hasStartedSession = true
-            isRunning = true
+            beginRunningNow()
             countdownTask = nil
         }
+    }
+    
+    private func beginRunningNow() {
+        isCountingDown = false
+        countdownRemaining = 0
+        hasStartedSession = true
+        shouldUseCountdownOnNextStart = false
+        isRunning = true
     }
 
     private func clampedSpeed(_ value: Double) -> Double {
