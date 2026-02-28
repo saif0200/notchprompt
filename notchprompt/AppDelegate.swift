@@ -11,16 +11,6 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
-    private enum Shortcut: String, CaseIterable {
-        case startPause = "p"
-        case reset = "r"
-        case jumpBack = "j"
-        case togglePrivacy = "h"
-        case toggleOverlay = "o"
-        case speedUp = "="
-        case speedDown = "-"
-    }
-
     private let shortcutModifiers: NSEvent.ModifierFlags = [.command, .option]
 
     private let model = PrompterModel.shared
@@ -36,8 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var privacyModeItem: NSMenuItem?
     private var speedUpItem: NSMenuItem?
     private var speedDownItem: NSMenuItem?
-    private var localKeyMonitor: Any?
-    private var globalKeyMonitor: Any?
+    private var shortcutWarningItem: NSMenuItem?
+    private var shortcutWarningDetailItem: NSMenuItem?
+    private var shortcutWarningSeparator: NSMenuItem?
+    private lazy var hotkeyManager = GlobalHotkeyManager { [weak self] command in
+        self?.performShortcut(command)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         model.loadFromDefaults()
@@ -50,20 +44,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 #endif
 
         wireModel()
+        hotkeyManager.registerAll()
         setupStatusBar()
-        setupKeyboardShortcuts()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         model.saveToDefaults()
-        removeKeyboardShortcuts()
+        hotkeyManager.unregisterAll()
         cancellables.removeAll()
-    }
-
-    func applicationDidBecomeActive(_ notification: Notification) {
-        if localKeyMonitor == nil || globalKeyMonitor == nil {
-            setupKeyboardShortcuts()
-        }
     }
 
     private func wireModel() {
@@ -140,7 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let startPause = NSMenuItem(
             title: "Start/Pause (Option+Command+P)",
             action: #selector(toggleRunning),
-            keyEquivalent: Shortcut.startPause.rawValue
+            keyEquivalent: ShortcutCommand.startPause.keyEquivalent
         )
         startPause.target = self
         startPause.keyEquivalentModifierMask = shortcutModifiers
@@ -150,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let reset = NSMenuItem(
             title: "Reset Scroll (Option+Command+R)",
             action: #selector(resetScroll),
-            keyEquivalent: Shortcut.reset.rawValue
+            keyEquivalent: ShortcutCommand.reset.keyEquivalent
         )
         reset.target = self
         reset.keyEquivalentModifierMask = shortcutModifiers
@@ -159,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let jumpBack = NSMenuItem(
             title: "Jump Back 5s (Option+Command+J)",
             action: #selector(jumpBack),
-            keyEquivalent: Shortcut.jumpBack.rawValue
+            keyEquivalent: ShortcutCommand.jumpBack.keyEquivalent
         )
         jumpBack.target = self
         jumpBack.keyEquivalentModifierMask = shortcutModifiers
@@ -168,7 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let privacyMode = NSMenuItem(
             title: "Privacy Mode (Option+Command+H)",
             action: #selector(togglePrivacyMode),
-            keyEquivalent: Shortcut.togglePrivacy.rawValue
+            keyEquivalent: ShortcutCommand.togglePrivacy.keyEquivalent
         )
         privacyMode.target = self
         privacyMode.keyEquivalentModifierMask = shortcutModifiers
@@ -178,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let showOverlay = NSMenuItem(
             title: "Show Overlay (Option+Command+O)",
             action: #selector(toggleOverlayVisibility),
-            keyEquivalent: Shortcut.toggleOverlay.rawValue
+            keyEquivalent: ShortcutCommand.toggleOverlay.keyEquivalent
         )
         showOverlay.target = self
         showOverlay.keyEquivalentModifierMask = shortcutModifiers
@@ -188,7 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let speedUp = NSMenuItem(
             title: "Increase Speed (Option+Command+=)",
             action: #selector(increaseSpeed),
-            keyEquivalent: Shortcut.speedUp.rawValue
+            keyEquivalent: ShortcutCommand.speedUp.keyEquivalent
         )
         speedUp.target = self
         speedUp.keyEquivalentModifierMask = shortcutModifiers
@@ -198,12 +186,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let speedDown = NSMenuItem(
             title: "Decrease Speed (Option+Command+-)",
             action: #selector(decreaseSpeed),
-            keyEquivalent: Shortcut.speedDown.rawValue
+            keyEquivalent: ShortcutCommand.speedDown.keyEquivalent
         )
         speedDown.target = self
         speedDown.keyEquivalentModifierMask = shortcutModifiers
         menu.addItem(speedDown)
         speedDownItem = speedDown
+
+        refreshShortcutWarningItems(in: menu)
 
         menu.addItem(.separator())
 
@@ -280,101 +270,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.terminate(nil)
     }
 
-    private func setupKeyboardShortcuts() {
-        removeKeyboardShortcuts()
-
-        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if self?.handleShortcut(event) == true {
-                return nil
-            }
-            return event
-        }
-
-        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            _ = self?.handleShortcut(event)
-        }
-    }
-
-    private func removeKeyboardShortcuts() {
-        if let localKeyMonitor {
-            NSEvent.removeMonitor(localKeyMonitor)
-            self.localKeyMonitor = nil
-        }
-        if let globalKeyMonitor {
-            NSEvent.removeMonitor(globalKeyMonitor)
-            self.globalKeyMonitor = nil
-        }
-    }
-
-    @discardableResult
-    private func handleShortcut(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard let key = shortcut(charactersIgnoringModifiers: event.charactersIgnoringModifiers, flags: flags) else {
-            return false
-        }
-
-        switch key {
+    private func performShortcut(_ command: ShortcutCommand) {
+        switch command {
         case .startPause:
             model.toggleRunning()
-            return true
         case .reset:
             model.resetScroll()
-            return true
         case .jumpBack:
             model.jumpBack(seconds: 5)
-            return true
         case .togglePrivacy:
             model.privacyModeEnabled.toggle()
-            return true
         case .toggleOverlay:
             model.isOverlayVisible.toggle()
-            return true
         case .speedUp:
             model.adjustSpeed(delta: PrompterModel.speedStep)
-            return true
         case .speedDown:
             model.adjustSpeed(delta: -PrompterModel.speedStep)
-            return true
         }
     }
 
-    private func shortcut(
-        charactersIgnoringModifiers: String?,
-        flags: NSEvent.ModifierFlags
-    ) -> Shortcut? {
-        guard flags == shortcutModifiers else { return nil }
-        guard var raw = charactersIgnoringModifiers?.lowercased(), !raw.isEmpty else {
-            return nil
+    private func refreshShortcutWarningItems(in menu: NSMenu) {
+        if let shortcutWarningItem {
+            menu.removeItem(shortcutWarningItem)
+            self.shortcutWarningItem = nil
+        }
+        if let shortcutWarningDetailItem {
+            menu.removeItem(shortcutWarningDetailItem)
+            self.shortcutWarningDetailItem = nil
+        }
+        if let shortcutWarningSeparator {
+            menu.removeItem(shortcutWarningSeparator)
+            self.shortcutWarningSeparator = nil
         }
 
-        if raw == "+" {
-            raw = Shortcut.speedUp.rawValue
-        } else if raw == "_" {
-            raw = Shortcut.speedDown.rawValue
+        let unavailable = hotkeyManager.failedRegistrations
+        guard !unavailable.isEmpty else { return }
+
+        if unavailable.count == 1, let first = unavailable.first {
+            let warning = NSMenuItem(
+                title: "Shortcut unavailable: \(first.displayShortcut) (in use by another app)",
+                action: nil,
+                keyEquivalent: ""
+            )
+            warning.isEnabled = false
+            menu.insertItem(warning, at: 0)
+            shortcutWarningItem = warning
+        } else {
+            let warning = NSMenuItem(
+                title: "Shortcuts unavailable (\(unavailable.count))",
+                action: nil,
+                keyEquivalent: ""
+            )
+            warning.isEnabled = false
+            menu.insertItem(warning, at: 0)
+            shortcutWarningItem = warning
+
+            let detail = unavailable
+                .map(\.displayShortcut)
+                .joined(separator: ", ")
+            let detailItem = NSMenuItem(
+                title: "In use by another app: \(detail)",
+                action: nil,
+                keyEquivalent: ""
+            )
+            detailItem.isEnabled = false
+            menu.insertItem(detailItem, at: 1)
+            shortcutWarningDetailItem = detailItem
         }
 
-        return Shortcut(rawValue: raw)
+        let separator = NSMenuItem.separator()
+        menu.insertItem(separator, at: unavailable.count == 1 ? 1 : 2)
+        shortcutWarningSeparator = separator
     }
 
 #if DEBUG
     private func runShortcutSelfChecks() {
-        func check(_ key: String, _ expected: Shortcut?) {
-            let result = shortcut(charactersIgnoringModifiers: key, flags: shortcutModifiers)
-            assert(result == expected, "Unexpected shortcut map for \(key). expected=\(String(describing: expected)) got=\(String(describing: result))")
-        }
-
-        check("p", .startPause)
-        check("r", .reset)
-        check("j", .jumpBack)
-        check("h", .togglePrivacy)
-        check("o", .toggleOverlay)
-        check("=", .speedUp)
-        check("+", .speedUp)
-        check("-", .speedDown)
-        check("_", .speedDown)
-
-        let invalid = shortcut(charactersIgnoringModifiers: "p", flags: [.command])
-        assert(invalid == nil, "Shortcuts should require exact Option+Command modifiers")
+        GlobalHotkeyManager.runSelfChecks()
     }
 #endif
 

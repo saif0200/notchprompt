@@ -20,6 +20,8 @@ struct ScrollingTextView: View {
     let backgroundOpacity: Double
     let isHovering: Bool
     let scrollMode: PrompterModel.ScrollMode
+    let savedScrollPhaseForResume: CGFloat?
+    let onSaveScrollPhaseForResume: ((CGFloat) -> Void)?
     let onReachedEnd: (() -> Void)?
 
     private static let loopGap: CGFloat = 24
@@ -147,7 +149,7 @@ struct ScrollingTextView: View {
                 .frame(width: viewportProxy.size.width, height: viewportProxy.size.height, alignment: .topLeading)
                 .onAppear {
                     viewportHeight = max(viewportProxy.size.height, 0)
-                    resetPhase()
+                    restoreOrResetPhase()
                 }
                 .onChange(of: viewportProxy.size.height) { _, newHeight in
                     viewportHeight = max(newHeight, 0)
@@ -178,7 +180,10 @@ struct ScrollingTextView: View {
                     // where tick fires before this handler.
                     deferredStopTargetPhase = nil
                 }
-                .onChange(of: isRunning) { _, _ in
+                .onChange(of: isRunning) { _, isNowRunning in
+                    if !isNowRunning {
+                        onSaveScrollPhaseForResume?(phase)
+                    }
                     lastTickDate = timeline.date
                 }
                 .onChange(of: isHovering) { _, _ in
@@ -261,6 +266,20 @@ struct ScrollingTextView: View {
 
     private func resetPhase() {
         phase = topOfScriptPhaseFloor
+        hasReachedEndInStopMode = false
+        deferredStopTargetPhase = nil
+        lastTickDate = nil
+        let desired = desiredSpeedMultiplier()
+        currentSpeedMultiplier = desired
+        targetSpeedMultiplier = desired
+    }
+
+    private func restoreOrResetPhase() {
+        guard hasStartedSession, let saved = savedScrollPhaseForResume else {
+            resetPhase()
+            return
+        }
+        phase = max(saved, topOfScriptPhaseFloor)
         hasReachedEndInStopMode = false
         deferredStopTargetPhase = nil
         lastTickDate = nil

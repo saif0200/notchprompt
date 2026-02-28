@@ -68,6 +68,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
     @Published private(set) var resetToken: UUID = UUID()
     @Published private(set) var jumpBackToken: UUID = UUID()
     @Published private(set) var jumpBackDistancePoints: CGFloat = 0
+    private(set) var savedScrollPhaseForResume: CGFloat?
 
     private var countdownTask: Task<Void, Never>?
     private var shouldUseCountdownOnNextStart: Bool = true
@@ -103,7 +104,12 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
     func resetScroll() {
         didReachEndInStopMode = false
         shouldUseCountdownOnNextStart = true
+        savedScrollPhaseForResume = nil
         resetToken = UUID()
+    }
+
+    func saveScrollPhaseForResume(_ phase: CGFloat) {
+        savedScrollPhaseForResume = phase
     }
 
     func jumpBack(seconds: Double = 5) {
