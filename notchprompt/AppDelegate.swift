@@ -126,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let menu = NSMenu()
 
         let startPause = NSMenuItem(
-            title: "Start/Pause (Option+Command+P)",
+            title: "Start/Pause",
             action: #selector(toggleRunning),
             keyEquivalent: ShortcutCommand.startPause.keyEquivalent
         )
@@ -136,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         startPauseItem = startPause
 
         let reset = NSMenuItem(
-            title: "Reset Scroll (Option+Command+R)",
+            title: "Reset Scroll",
             action: #selector(resetScroll),
             keyEquivalent: ShortcutCommand.reset.keyEquivalent
         )
@@ -145,7 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         menu.addItem(reset)
 
         let jumpBack = NSMenuItem(
-            title: "Jump Back 5s (Option+Command+J)",
+            title: "Jump Back 5s",
             action: #selector(jumpBack),
             keyEquivalent: ShortcutCommand.jumpBack.keyEquivalent
         )
@@ -154,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         menu.addItem(jumpBack)
 
         let privacyMode = NSMenuItem(
-            title: "Privacy Mode (Option+Command+H)",
+            title: "Privacy Mode",
             action: #selector(togglePrivacyMode),
             keyEquivalent: ShortcutCommand.togglePrivacy.keyEquivalent
         )
@@ -164,7 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         privacyModeItem = privacyMode
 
         let showOverlay = NSMenuItem(
-            title: "Show Overlay (Option+Command+O)",
+            title: "Show Overlay",
             action: #selector(toggleOverlayVisibility),
             keyEquivalent: ShortcutCommand.toggleOverlay.keyEquivalent
         )
@@ -174,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         showOverlayItem = showOverlay
 
         let speedUp = NSMenuItem(
-            title: "Increase Speed (Option+Command+=)",
+            title: "Increase Speed",
             action: #selector(increaseSpeed),
             keyEquivalent: ShortcutCommand.speedUp.keyEquivalent
         )
@@ -184,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         speedUpItem = speedUp
 
         let speedDown = NSMenuItem(
-            title: "Decrease Speed (Option+Command+-)",
+            title: "Decrease Speed",
             action: #selector(decreaseSpeed),
             keyEquivalent: ShortcutCommand.speedDown.keyEquivalent
         )
@@ -353,7 +353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem === startPauseItem {
-            menuItem.title = model.isRunning ? "Pause (Option+Command+P)" : "Start (Option+Command+P)"
+            menuItem.title = model.isRunning ? "Pause" : "Start"
             return true
         }
 

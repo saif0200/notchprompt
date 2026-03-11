@@ -125,6 +125,8 @@ struct OverlayView: View {
                 resetToken: model.resetToken,
                 jumpBackToken: model.jumpBackToken,
                 jumpBackDistancePoints: model.jumpBackDistancePoints,
+                manualScrollToken: model.manualScrollToken,
+                manualScrollDeltaPoints: model.manualScrollDeltaPoints,
                 fadeFraction: CGFloat(model.edgeFadeFraction),
                 backgroundOpacity: model.backgroundOpacity,
                 isHovering: false,
@@ -143,14 +145,21 @@ struct OverlayView: View {
             .padding(.top, 58)
             .padding(.bottom, 16)
             .clipShape(Rectangle())
+            .overlay {
+                TrackpadScrollCaptureView { delta in
+                    model.handleManualScroll(deltaPoints: delta)
+                }
+            }
             
             if !model.isCountingDown {
                 HStack {
                     HStack(spacing: 6) {
-                        OverlayControlButton(symbol: model.isRunning ? "pause.fill" : "play.fill") {
-                            model.toggleRunning()
+                        OverlayControlButton(
+                            symbol: (model.isRunning || model.isCountingDown) ? "hand.draw.fill" : "play.fill"
+                        ) {
+                            model.switchPlaybackModeFromOverlayControl()
                         }
-                        .help(model.isRunning ? "Pause" : "Start")
+                        .help((model.isRunning || model.isCountingDown) ? "Pause and switch to manual trackpad scroll" : "Start auto scroll")
                         
                         OverlayControlButton(symbol: "gobackward.5") {
                             model.jumpBack(seconds: 5)
@@ -177,6 +186,11 @@ struct OverlayView: View {
                             model.adjustSpeed(delta: PrompterModel.speedStep)
                         }
                         .help("Increase speed")
+
+                        OverlayControlButton(symbol: "xmark") {
+                            NSApp.terminate(nil)
+                        }
+                        .help("Quit Notchprompt")
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
@@ -208,6 +222,7 @@ struct OverlayView: View {
 
 private struct OverlayControlButton: View {
     let symbol: String
+    var isActive: Bool = false
     var repeatWhilePressed: Bool = false
     let action: () -> Void
     
@@ -220,7 +235,7 @@ private struct OverlayControlButton: View {
             .foregroundStyle(.white)
             .frame(width: 22, height: 22)
             .contentShape(Circle())
-            .background((isPressed ? Color.white.opacity(0.18) : Color.white.opacity(0.10)), in: Circle())
+            .background(backgroundFill, in: Circle())
             .overlay(
                 Circle()
                     .stroke(Color.white.opacity(0.16), lineWidth: 1)
@@ -259,6 +274,13 @@ private struct OverlayControlButton: View {
         repeatTask?.cancel()
         repeatTask = nil
     }
+
+    private var backgroundFill: Color {
+        if isPressed || isActive {
+            return Color.white.opacity(0.18)
+        }
+        return Color.white.opacity(0.10)
+    }
 }
 
 struct VisualEffectView: NSViewRepresentable {
@@ -276,5 +298,56 @@ struct VisualEffectView: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
+    }
+}
+
+struct TrackpadScrollCaptureView: NSViewRepresentable {
+    let onScroll: (CGFloat) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onScroll: onScroll)
+    }
+
+    func makeNSView(context: Context) -> ScrollCaptureNSView {
+        let view = ScrollCaptureNSView()
+        view.onScroll = context.coordinator.handleScroll
+        return view
+    }
+
+    func updateNSView(_ nsView: ScrollCaptureNSView, context: Context) {
+        nsView.onScroll = context.coordinator.handleScroll
+    }
+
+    final class Coordinator {
+        let onScroll: (CGFloat) -> Void
+
+        init(onScroll: @escaping (CGFloat) -> Void) {
+            self.onScroll = onScroll
+        }
+
+        func handleScroll(_ event: NSEvent) {
+            let rawDelta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY * 10
+            let semanticDelta = event.isDirectionInvertedFromDevice ? rawDelta : -rawDelta
+            onScroll(semanticDelta)
+        }
+    }
+}
+
+final class ScrollCaptureNSView: NSView {
+    var onScroll: ((NSEvent) -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        onScroll?(event)
     }
 }

@@ -42,6 +42,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
 """
 
     @Published var isRunning: Bool = false
+    @Published var manualScrollEnabled: Bool = false
     @Published var isOverlayVisible: Bool = true
     @Published var privacyModeEnabled: Bool = true
     @Published private(set) var hasStartedSession: Bool = false
@@ -68,6 +69,8 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
     @Published private(set) var resetToken: UUID = UUID()
     @Published private(set) var jumpBackToken: UUID = UUID()
     @Published private(set) var jumpBackDistancePoints: CGFloat = 0
+    @Published private(set) var manualScrollToken: UUID = UUID()
+    @Published private(set) var manualScrollDeltaPoints: CGFloat = 0
     private(set) var savedScrollPhaseForResume: CGFloat?
 
     private var countdownTask: Task<Void, Never>?
@@ -119,6 +122,38 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         jumpBackToken = UUID()
     }
 
+    func switchPlaybackModeFromOverlayControl() {
+        if isRunning || isCountingDown {
+            stop()
+            manualScrollEnabled = true
+            didReachEndInStopMode = false
+            hasStartedSession = true
+            shouldUseCountdownOnNextStart = false
+            return
+        }
+
+        manualScrollEnabled = false
+        start()
+    }
+
+    func handleManualScroll(deltaPoints: CGFloat) {
+        guard abs(deltaPoints) > 0.01 else { return }
+
+        if !manualScrollEnabled {
+            manualScrollEnabled = true
+        }
+
+        if isRunning || isCountingDown {
+            stop()
+        }
+
+        didReachEndInStopMode = false
+        hasStartedSession = true
+        shouldUseCountdownOnNextStart = false
+        manualScrollDeltaPoints = deltaPoints
+        manualScrollToken = UUID()
+    }
+
     func toggleRunning() {
         if isRunning || isCountingDown {
             stop()
@@ -131,6 +166,8 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         if isRunning || isCountingDown {
             return
         }
+
+        manualScrollEnabled = false
 
         if scrollMode == .stopAtEnd, didReachEndInStopMode {
             // Keyboard "start" from end should restart from the top without requiring manual reset.

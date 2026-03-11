@@ -16,6 +16,8 @@ struct ScrollingTextView: View {
     let resetToken: UUID
     let jumpBackToken: UUID
     let jumpBackDistancePoints: CGFloat
+    let manualScrollToken: UUID
+    let manualScrollDeltaPoints: CGFloat
     let fadeFraction: CGFloat
     let backgroundOpacity: Double
     let isHovering: Bool
@@ -170,6 +172,10 @@ struct ScrollingTextView: View {
                     deferredStopTargetPhase = nil
                     phase = max(phase - max(0, jumpBackDistancePoints), topOfScriptPhaseFloor)
                 }
+                .onChange(of: manualScrollToken) { _, _ in
+                    guard hasContent else { return }
+                    applyManualScrollDelta(manualScrollDeltaPoints)
+                }
                 .onChange(of: fontSize) { _, _ in
                     normalizeTopAnchorIfNearStart()
                 }
@@ -296,6 +302,22 @@ struct ScrollingTextView: View {
 
     private func desiredSpeedMultiplier() -> Double {
         (isRunning && !isHovering) ? 1.0 : 0.0
+    }
+
+    private func applyManualScrollDelta(_ delta: CGFloat) {
+        hasReachedEndInStopMode = false
+        deferredStopTargetPhase = nil
+        phase += delta
+
+        if scrollMode == .stopAtEnd, hasMeasuredContentHeight {
+            phase = min(max(phase, topOfScriptPhaseFloor), endPhase)
+            return
+        }
+
+        if phase >= cycleLength * 8 || phase <= -(cycleLength * 8) {
+            phase = phase.truncatingRemainder(dividingBy: cycleLength)
+        }
+        phase = max(phase, topOfScriptPhaseFloor)
     }
 
     private func tick(at date: Date) {
