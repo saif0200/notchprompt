@@ -111,8 +111,7 @@ struct ScrollingTextView: View {
     }
 
     private func repetitionCount(for viewportHeight: CGFloat) -> Int {
-        // Render enough copies to fully cover the viewport and keep the handoff
-        // between loops continuous even when the viewport gets taller.
+        if scrollMode == .stopAtEnd { return 1 }
         let minimumCopies = 3
         let needed = Int(ceil(viewportHeight / cycleLength)) + 2
         return max(minimumCopies, needed)

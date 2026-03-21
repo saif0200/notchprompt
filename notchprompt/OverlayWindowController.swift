@@ -12,6 +12,32 @@ import SwiftUI
 private final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        NSApp.activate(ignoringOtherApps: true)
+        makeKey()
+    }
+
+    @objc func paste(_ sender: Any?) {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return }
+        Task { @MainActor in
+            PrompterModel.shared.pasteScript(text)
+        }
+    }
+
+    @objc func clearScript(_ sender: Any?) {
+        Task { @MainActor in
+            PrompterModel.shared.script = ""
+        }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Clear", action: #selector(clearScript(_:)), keyEquivalent: ""))
+        NSMenu.popUpContextMenu(menu, with: event, for: contentView ?? self.contentView!)
+    }
 }
 
 private final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
@@ -53,7 +79,7 @@ final class OverlayWindowController {
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.ignoresMouseEvents = false
-        panel.becomesKeyOnlyIfNeeded = true
+        panel.becomesKeyOnlyIfNeeded = false
         panel.sharingType = model.privacyModeEnabled ? .none : .readOnly
 
         panel.contentView = hosting

@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         wireModel()
         hotkeyManager.registerAll()
         setupStatusBar()
+        installEditKeyHandler()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -239,6 +240,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         item.menu = menu
         statusItem = item
+    }
+
+    // MARK: - Edit key handler (Cmd+C/V/X/A/Z bypass for menu-bar apps)
+
+    private func installEditKeyHandler() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command ||
+                  event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift] else {
+                return event
+            }
+            let key = event.charactersIgnoringModifiers ?? ""
+            let action: Selector? = switch key {
+            case "x": #selector(NSText.cut(_:))
+            case "c": #selector(NSText.copy(_:))
+            case "v": #selector(NSText.paste(_:))
+            case "a": #selector(NSText.selectAll(_:))
+            case "z" where event.modifierFlags.contains(.shift): NSSelectorFromString("redo:")
+            case "z": NSSelectorFromString("undo:")
+            default: nil
+            }
+            if let action, NSApp.sendAction(action, to: nil, from: nil) {
+                return nil
+            }
+            return event
+        }
     }
 
     // MARK: - Actions

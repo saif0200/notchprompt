@@ -177,11 +177,23 @@ struct OverlayView: View {
                     Spacer(minLength: 8)
                     
                     HStack(spacing: 6) {
+                        OverlayControlButton(symbol: "doc.on.clipboard") {
+                            if let text = NSPasteboard.general.string(forType: .string) {
+                                model.pasteScript(text)
+                            }
+                        }
+                        .help("Paste script from clipboard")
+
+                        OverlayControlButton(symbol: "trash") {
+                            model.script = ""
+                        }
+                        .help("Clear script")
+
                         OverlayControlButton(symbol: "minus", repeatWhilePressed: true) {
                             model.adjustSpeed(delta: -PrompterModel.speedStep)
                         }
                         .help("Decrease speed")
-                        
+
                         OverlayControlButton(symbol: "plus", repeatWhilePressed: true) {
                             model.adjustSpeed(delta: PrompterModel.speedStep)
                         }
