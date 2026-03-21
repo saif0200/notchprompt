@@ -178,8 +178,8 @@ struct OverlayView: View {
                     
                     HStack(spacing: 6) {
                         OverlayControlButton(symbol: "doc.on.clipboard") {
-                            if let text = NSPasteboard.general.string(forType: .string), !text.isEmpty {
-                                model.script = text
+                            if let text = NSPasteboard.general.string(forType: .string) {
+                                model.pasteScript(text)
                             }
                         }
                         .help("Paste script from clipboard")

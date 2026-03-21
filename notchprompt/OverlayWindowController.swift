@@ -20,9 +20,9 @@ private final class OverlayPanel: NSPanel {
     }
 
     @objc func paste(_ sender: Any?) {
-        guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else { return }
+        guard let text = NSPasteboard.general.string(forType: .string) else { return }
         Task { @MainActor in
-            PrompterModel.shared.script = text
+            PrompterModel.shared.pasteScript(text)
         }
     }
 

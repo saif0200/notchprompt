@@ -104,6 +104,15 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         countdownTask?.cancel()
     }
 
+    func pasteScript(_ text: String) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let wasEmpty = script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        script = text
+        if wasEmpty {
+            hasStartedSession = true
+        }
+    }
+
     func resetScroll() {
         didReachEndInStopMode = false
         shouldUseCountdownOnNextStart = true
