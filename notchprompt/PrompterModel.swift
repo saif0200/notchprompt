@@ -258,12 +258,13 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         let trimmed = script.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return 0 }
 
+        // Reading duration is how long it takes to read the script aloud at a
+        // typical 160 words/minute. It is independent of the scroll speed
+        // (a layout/geometric quantity); mixing the two produced meaningless
+        // numbers (see #18).
         let words = max(1, trimmed.split(whereSeparator: \.isWhitespace).count)
-        // Approximation: 160 words/minute baseline adjusted by current speed.
         let baselineWPM = 160.0
-        let speedFactor = speedPointsPerSecond / Self.speedPresetNormal
-        let adjustedWPM = max(60, baselineWPM * speedFactor)
-        let minutes = Double(words) / adjustedWPM
+        let minutes = Double(words) / baselineWPM
         return minutes * 60
     }
 
