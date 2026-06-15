@@ -106,7 +106,7 @@ final class OverlayWindowController {
 #endif
         if isVisible {
             // Ensure the panel can reappear even when the app is backgrounded.
-            reposition()
+            reposition(animated: true)
             panel.level = .screenSaver
             panel.alphaValue = 1.0
             panel.orderFrontRegardless()
@@ -119,7 +119,7 @@ final class OverlayWindowController {
 #endif
     }
 
-    func reposition() {
+    func reposition(animated: Bool = false) {
         guard let screen = targetScreen() ?? NSScreen.main ?? NSScreen.screens.first else { return }
 
         let width = CGFloat(model.overlayWidth)
@@ -142,20 +142,12 @@ final class OverlayWindowController {
         )
 #endif
 
-        let shouldAnimate: Bool
-        if let lastFrame {
-            let movedEnough = abs(lastFrame.origin.x - targetFrame.origin.x) > 0.5 ||
-                abs(lastFrame.origin.y - targetFrame.origin.y) > 0.5
-            let resizedEnough = abs(lastFrame.size.width - targetFrame.size.width) > 0.5 ||
-                abs(lastFrame.size.height - targetFrame.size.height) > 0.5
-            shouldAnimate = movedEnough || resizedEnough
-        } else {
-            shouldAnimate = false
-        }
-
-        panel.setFrame(targetFrame, display: true, animate: shouldAnimate)
+        // Only animate on explicit, discrete transitions (e.g. showing the overlay).
+        // Slider-driven geometry changes arrive in a 16 ms-throttled stream and would
+        // stack overlapping animations if animated (see #17).
+        panel.setFrame(targetFrame, display: true, animate: animated)
         lastFrame = targetFrame
-        
+
         // Ensure level is re-applied in case something reset it
         panel.level = .screenSaver
         panel.alphaValue = 1.0
