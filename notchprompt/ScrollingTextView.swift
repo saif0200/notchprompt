@@ -161,9 +161,13 @@ struct ScrollingTextView: View {
                     resetPhase()
                 }
                 .onChange(of: text) { _, _ in
+                    // Content changed: re-measure height and re-anchor only if we
+                    // are sitting at the very top. Do NOT reset the phase — that
+                    // would snap a running read back to line 1 (see #15). Explicit
+                    // resets route through `resetToken` / `model.resetScroll()`.
                     hasMeasuredContentHeight = false
                     deferredStopTargetPhase = nil
-                    resetPhase()
+                    normalizeTopAnchorIfNearStart()
                 }
                 .onChange(of: jumpBackToken) { _, _ in
                     guard hasContent else { return }

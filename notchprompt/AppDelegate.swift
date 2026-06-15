@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var settingsWindowController: SettingsWindowController?
     private var scriptEditorWindowController: ScriptEditorWindowController?
     private var cancellables: Set<AnyCancellable> = []
+    private var editKeyMonitor: Any?
 
     private var startPauseItem: NSMenuItem?
     private var showOverlayItem: NSMenuItem?
@@ -53,6 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationWillTerminate(_ notification: Notification) {
         model.saveToDefaults()
         hotkeyManager.unregisterAll()
+        if let editKeyMonitor {
+            NSEvent.removeMonitor(editKeyMonitor)
+            self.editKeyMonitor = nil
+        }
         cancellables.removeAll()
     }
 
@@ -245,7 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // MARK: - Edit key handler (Cmd+C/V/X/A/Z bypass for menu-bar apps)
 
     private func installEditKeyHandler() {
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        editKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command ||
                   event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift] else {
                 return event
