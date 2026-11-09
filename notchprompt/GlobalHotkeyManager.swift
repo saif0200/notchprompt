@@ -39,7 +39,7 @@ enum ShortcutCommand: CaseIterable {
         case .jumpBack:
             return "⌥⌘J"
         case .togglePrivacy:
-            return "⌥⌘H"
+            return "⌃⌥⌘H"
         case .toggleOverlay:
             return "⌥⌘O"
         case .speedUp:
@@ -87,8 +87,13 @@ enum ShortcutCommand: CaseIterable {
         }
     }
 
+    /// ⌥⌘H is Hide Others in every Mac app, so this one takes an extra modifier.
+    var modifierFlags: NSEvent.ModifierFlags {
+        self == .togglePrivacy ? [.control, .option, .command] : [.option, .command]
+    }
+
     fileprivate var carbonModifiers: UInt32 {
-        UInt32(optionKey | cmdKey)
+        self == .togglePrivacy ? UInt32(controlKey | optionKey | cmdKey) : UInt32(optionKey | cmdKey)
     }
 }
 
@@ -157,7 +162,7 @@ final class GlobalHotkeyManager {
         assert(Set(commands.map(\.displayShortcut)).count == commands.count, "Display shortcuts must be unique")
         for command in commands {
             assert(!command.keyEquivalent.isEmpty, "Missing keyEquivalent for \(command)")
-            assert(command.carbonModifiers == UInt32(optionKey | cmdKey), "Unexpected modifiers for \(command)")
+            assert(command.carbonModifiers & UInt32(cmdKey) != 0, "Shortcut without Command: \(command)")
         }
     }
     #endif

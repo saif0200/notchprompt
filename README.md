@@ -21,13 +21,14 @@ Native macOS notch-adjacent teleprompter for presentations and recordings.
 
 ## Features
 
-- Menu bar utility workflow (`NP` status item).
-- Notch-adjacent floating overlay with transport controls.
-- Start/pause, reset, and jump back 5 seconds.
-- Adjustable speed, font size, overlay width, and overlay height.
-- Optional countdown before scrolling starts.
-- Import/export plain text scripts.
-- Privacy mode (`NSWindow.SharingType`, best-effort/app-dependent).
+- A Dynamic Island around the camera: built for the OLED MacBook Pro, and it adapts to the notch and to displays with no camera.
+- Pace in words per minute, so the font size never changes how fast you read, and the time shown is the real read time.
+- Finish-at-a-set-time mode that works out the pace for you.
+- 120 Hz GPU scrolling with a moveable reading line, focus dimming and mirroring.
+- Scroll only while you talk, or follow your voice word by word, on device. Choose Apple Speech (macOS 26 and later) or the built-in Whisper model.
+- Trackpad correction mid-read, 5-second jump back, optional countdown.
+- Import text, Word, RTF, PDF and PowerPoint speaker notes; a searchable script library.
+- Hide from screen sharing (`NSWindow.SharingType`, best-effort/app-dependent).
 
 ## Requirements
 
@@ -72,7 +73,7 @@ If it is still blocked:
 | `⌥⌘P` | Start / Pause |
 | `⌥⌘R` | Reset scroll |
 | `⌥⌘J` | Jump back 5s |
-| `⌥⌘H` | Toggle Privacy Mode |
+| `⌃⌥⌘H` | Toggle Privacy Mode |
 | `⌥⌘=` | Increase speed |
 | `⌥⌘-` | Decrease speed |
 
@@ -93,3 +94,10 @@ xcodebuild -project notchprompt.xcodeproj -scheme notchprompt -configuration Deb
 ## License
 
 MIT. See `LICENSE`.
+
+## Development
+
+- `zsh scripts/test.sh` runs the logic checks (island geometry, scroll physics, script parsing, voice alignment).
+- `zsh scripts/fetch-whisper-model.sh` downloads the Whisper model that ships in the app (`Models/`, gitignored, pinned revision). Release builds fail without it; `install.sh` and `build_release_zip.sh` fetch it for you.
+- `NOTCHPROMPT_TEAM=<team id> zsh scripts/install.sh` builds Release, signs it with your Apple Development identity and installs it.
+- In a Debug build, `NOTCHPROMPT_SNAPSHOT=<folder>` walks the island through every state, clicks its controls, writes PNGs and quits. The folder must be inside the app's sandbox container. Set `NOTCHPROMPT_DEFAULTS_SUITE=<name>` so it doesn't touch your settings. `NOTCHPROMPT_SPEECH_AUDIO` (16 kHz mono float CAF) and `NOTCHPROMPT_SPEECH_TEXT` also play that speech through each engine in real time and report the lag.

@@ -15,15 +15,15 @@ final class SettingsWindowController: NSWindowController {
         let hosting = NSHostingController(rootView: root)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 700, height: 700),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Notchprompt Settings"
+        window.title = "Settings"
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 620, height: 460)
+        window.minSize = NSSize(width: 520, height: 460)
         window.setFrameAutosaveName("NotchpromptSettingsWindow")
         window.center()
 

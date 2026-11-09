@@ -20,7 +20,7 @@ final class ScriptEditorWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Notchprompt Script Editor"
+        window.title = "Script Editor"
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 620, height: 460)
