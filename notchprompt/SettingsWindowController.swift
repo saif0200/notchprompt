@@ -25,6 +25,8 @@ final class SettingsWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 520, height: 460)
         window.setFrameAutosaveName("NotchpromptSettingsWindow")
+        // Sit above the overlay panel (.screenSaver) so the notch never blocks this window.
+        window.level = NSWindow.Level(Int(NSWindow.Level.screenSaver.rawValue) + 1)
         window.center()
 
         super.init(window: window)
@@ -37,6 +39,8 @@ final class SettingsWindowController: NSWindowController {
 
     func show() {
         NSApp.activate(ignoringOtherApps: true)
+        // Colour pickers open from this window and must not land behind it.
+        NSColorPanel.shared.level = window?.level ?? .floating
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         // Last-resort if another always-on-top window exists.

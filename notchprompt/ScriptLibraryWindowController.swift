@@ -23,6 +23,8 @@ final class ScriptLibraryWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 500, height: 400)
         window.setFrameAutosaveName("NotchpromptScriptLibraryWindow")
+        // Sit above the overlay panel (.screenSaver) so the notch never blocks this window.
+        window.level = NSWindow.Level(Int(NSWindow.Level.screenSaver.rawValue) + 1)
         window.center()
 
         super.init(window: window)

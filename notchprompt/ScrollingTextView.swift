@@ -614,6 +614,8 @@ final class PrompterTextNSView: NSView {
 
     // MARK: - Input
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func scrollWheel(with event: NSEvent) {
         // `scrollingDeltaY` already has the user's natural-scrolling choice in it.
         let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 10

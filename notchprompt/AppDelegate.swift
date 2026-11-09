@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         hotkeyManager.registerAll()
         setupStatusBar()
         installMainMenu()
+        installEditKeyHandler()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -171,6 +172,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainMenu.addItem(editItem)
 
         NSApp.mainMenu = mainMenu
+    }
+
+    /// Menu-bar apps don't reliably get ⌘X/C/V/A/Z through the menu.
+    private func installEditKeyHandler() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags == .command || flags == [.command, .shift] else { return event }
+
+            let action: Selector?
+            switch (event.charactersIgnoringModifiers ?? "").lowercased() {
+            case "x": action = #selector(NSText.cut(_:))
+            case "c": action = #selector(NSText.copy(_:))
+            case "v": action = #selector(NSText.paste(_:))
+            case "a": action = #selector(NSText.selectAll(_:))
+            case "z": action = NSSelectorFromString(flags.contains(.shift) ? "redo:" : "undo:")
+            default: action = nil
+            }
+            if let action, NSApp.sendAction(action, to: nil, from: nil) {
+                return nil
+            }
+            return event
+        }
     }
 
     // MARK: - Actions

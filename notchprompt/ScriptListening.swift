@@ -20,8 +20,11 @@ enum SpeechEngineChoice: String, CaseIterable {
         }
     }
 
+    /// Needs macOS 26, Apple silicon, and a toolchain with the macOS 26 SDK.
     static var isAppleAvailable: Bool {
+#if compiler(>=6.2) && arch(arm64)
         if #available(macOS 26.0, *) { return true }
+#endif
         return false
     }
 

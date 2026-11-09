@@ -24,6 +24,8 @@ final class ScriptEditorWindowController: NSWindowController {
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 620, height: 460)
+        // Sit above the overlay panel (.screenSaver) so the notch never blocks this window.
+        window.level = NSWindow.Level(Int(NSWindow.Level.screenSaver.rawValue) + 1)
         window.setFrameAutosaveName("NotchpromptScriptEditorWindow")
         window.center()
 

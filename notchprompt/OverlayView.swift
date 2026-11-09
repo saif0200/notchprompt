@@ -49,6 +49,18 @@ struct OverlayView: View {
         ZStack(alignment: .top) {
             shape.fill(islandFill)
 
+            // A real Button: gestures miss clicks in a non-activating panel.
+            Button {
+                model.expandIsland()
+            } label: {
+                Color.clear
+                    .frame(width: size.width, height: size.height)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(form == .expanded)
+            .accessibilityLabel("Open prompter")
+
             expandedContent
                 .frame(width: layout.expandedSize.width, height: layout.expandedSize.height, alignment: .top)
                 .opacity(form == .expanded ? 1 : 0)
@@ -57,15 +69,11 @@ struct OverlayView: View {
             compactContent
                 .frame(width: layout.size(for: .compact).width, height: layout.compactHeight)
                 .opacity(form == .compact ? 1 : 0)
-                .allowsHitTesting(form != .expanded)
+                .allowsHitTesting(false)
         }
         .frame(width: size.width, height: size.height, alignment: .top)
         .clipShape(shape)
         .contentShape(shape)
-        .onTapGesture {
-            if form != .expanded { model.expandIsland() }
-        }
-        .contextMenu { islandMenu }
         .padding(.top, layout.topInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(
@@ -85,15 +93,6 @@ struct OverlayView: View {
     /// keeps blending with the camera whatever the colours are set to.
     private var islandFill: Color {
         form == .expanded ? model.backgroundColor.opacity(model.backgroundOpacity) : .black
-    }
-
-    @ViewBuilder
-    private var islandMenu: some View {
-        Button(model.isRunning ? "Pause" : "Start") { model.toggleRunning() }
-        Button("Script Editor…") { sendAppAction(#selector(AppDelegate.openScriptEditorFromOverlay)) }
-        Button("Settings…") { sendAppAction(#selector(AppDelegate.openSettingsFromOverlay)) }
-        Divider()
-        Button("Hide Island") { model.isOverlayVisible = false }
     }
 
     // MARK: - Compact
@@ -362,6 +361,12 @@ struct OverlayView: View {
                 sendAppAction(#selector(AppDelegate.openScriptEditorFromOverlay))
             }
             if showsSecondary {
+                IslandButton(symbol: "doc.on.clipboard", label: "Paste script from clipboard") {
+                    if let text = NSPasteboard.general.string(forType: .string) {
+                        model.pasteScript(text)
+                    }
+                }
+                IslandButton(symbol: "trash", label: "Clear script") { model.clearScript() }
                 IslandButton(symbol: "gearshape.fill", label: "Settings") {
                     sendAppAction(#selector(AppDelegate.openSettingsFromOverlay))
                 }
@@ -440,6 +445,8 @@ private struct ProgressRing: View {
     }
 }
 
+/// A real SwiftUI Button rather than a press gesture: gestures miss clicks in a
+/// non-activating panel (FB13720950).
 private struct IslandButton: View {
     let symbol: String
     let label: String
@@ -450,64 +457,82 @@ private struct IslandButton: View {
     let action: () -> Void
 
     @State private var isHovering = false
-    @State private var isPressed = false
-    @State private var repeatTask: Task<Void, Never>?
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: iconSize, weight: .bold))
-            .foregroundStyle(isProminent ? Color.black : Color.white.opacity(isHovering ? 1 : 0.82))
-            .frame(width: size, height: size)
-            .background(fill, in: Circle())
-            .scaleEffect(isPressed ? 0.9 : 1)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
-            .contentShape(Circle())
-            .onHover { isHovering = $0 }
-            .gesture(pressGesture)
-            .onDisappear(perform: endPress)
-            .help(label)
-            .accessibilityElement()
-            .accessibilityLabel(label)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { action() }
+        Button {
+            if !repeatsWhileHeld { action() }
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: iconSize, weight: .bold))
+                .foregroundStyle(isProminent ? Color.black : Color.white.opacity(isHovering ? 1 : 0.82))
+                .frame(width: size, height: size)
+                .contentShape(Circle())
+        }
+        .buttonStyle(
+            IslandButtonStyle(
+                isProminent: isProminent,
+                isHovering: isHovering,
+                repeatAction: repeatsWhileHeld ? action : nil
+            )
+        )
+        .onHover { isHovering = $0 }
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityAction { action() }
+    }
+}
+
+private struct IslandButtonStyle: ButtonStyle {
+    let isProminent: Bool
+    let isHovering: Bool
+    let repeatAction: (() -> Void)?
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(fill(isPressed: configuration.isPressed), in: Circle())
+            .scaleEffect(configuration.isPressed ? 0.9 : 1)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
+            .background {
+                if let repeatAction {
+                    RepeatWhileHeld(isPressed: configuration.isPressed, action: repeatAction)
+                }
+            }
     }
 
-    private var fill: Color {
+    private func fill(isPressed: Bool) -> Color {
         if isProminent { return Color.white.opacity(isPressed ? 0.75 : 1) }
         if isPressed { return Color.white.opacity(0.22) }
         return isHovering ? Color.white.opacity(0.12) : Color.clear
     }
+}
 
-    private var pressGesture: some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { _ in
-                guard !isPressed else { return }
-                isPressed = true
-                if repeatsWhileHeld { startRepeating() }
-            }
-            .onEnded { value in
-                let wasRepeating = repeatsWhileHeld
-                endPress()
-                let isInside = abs(value.translation.width) < size && abs(value.translation.height) < size
-                if !wasRepeating, isInside { action() }
-            }
-    }
+/// Fires on press-down, then keeps firing until released.
+private struct RepeatWhileHeld: View {
+    let isPressed: Bool
+    let action: () -> Void
 
-    private func startRepeating() {
-        action()
-        repeatTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(320))
-            while !Task.isCancelled {
+    @State private var repeatTask: Task<Void, Never>?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onChange(of: isPressed) { _, pressed in
+                repeatTask?.cancel()
+                repeatTask = nil
+                guard pressed else { return }
                 action()
-                try? await Task.sleep(for: .milliseconds(90))
+                repeatTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(320))
+                    while !Task.isCancelled {
+                        action()
+                        try? await Task.sleep(for: .milliseconds(90))
+                    }
+                }
             }
-        }
-    }
-
-    private func endPress() {
-        isPressed = false
-        repeatTask?.cancel()
-        repeatTask = nil
+            .onDisappear {
+                repeatTask?.cancel()
+                repeatTask = nil
+            }
     }
 }
 
@@ -597,8 +622,13 @@ private struct IslandResizeHandle: NSViewRepresentable {
 
         override var mouseDownCanMoveWindow: Bool { false }
 
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
         private var cursor: NSCursor {
-            NSCursor.frameResize(position: side == .right ? .bottomRight : .bottomLeft, directions: .all)
+            if #available(macOS 15.0, *) {
+                return NSCursor.frameResize(position: side == .right ? .bottomRight : .bottomLeft, directions: .all)
+            }
+            return .crosshair
         }
 
         override func updateTrackingAreas() {

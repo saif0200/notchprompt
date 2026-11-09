@@ -7,6 +7,7 @@
 //  model and downloads it once if it isn't already on the Mac.
 //
 
+#if compiler(>=6.2) && arch(arm64)
 import AVFoundation
 import Combine
 import Foundation
@@ -260,3 +261,4 @@ private final class AnalyzerAudioForwarder: @unchecked Sendable {
         continuation.yield(AnalyzerInput(buffer: output))
     }
 }
+#endif

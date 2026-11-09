@@ -47,7 +47,7 @@ enum OverlayDebugHarness {
 
             hover(window, entered: true)
             await capture("6-expanded-controls")
-            let playPoint = CGPoint(x: window.frame.width / 2 - 96, y: 28)
+            let playPoint = CGPoint(x: window.frame.width / 2 - 128, y: 28)
             click(window, at: playPoint)
             await wait(0.3)
             expect(model.isRunning, "clicking play starts the script")

@@ -303,6 +303,15 @@ final class PrompterModel: ObservableObject {
         resetScroll()
     }
 
+    func pasteScript(_ text: String) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        loadScript(text)
+    }
+
+    func clearScript() {
+        loadScript("")
+    }
+
     private func refreshDocument() {
         document = ScriptDocument(script: script)
         alignmentEngine.setWords(document.words)
@@ -606,12 +615,14 @@ final class PrompterModel: ObservableObject {
     }
 
     private var activeListener: ScriptListeningEngine {
+#if compiler(>=6.2) && arch(arm64)
         if speechEngine == .apple, #available(macOS 26.0, *) {
             if let engine = appleEngine as? AppleSpeechEngine { return engine }
             let engine = AppleSpeechEngine()
             appleEngine = engine
             return engine
         }
+#endif
         return whisperEngine
     }
 

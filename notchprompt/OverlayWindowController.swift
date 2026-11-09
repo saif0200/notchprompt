@@ -11,10 +11,54 @@ import CoreGraphics
 import SwiftUI
 
 private final class OverlayPanel: NSPanel {
-    // Allowed to be key, but nothing here needs it, so with `becomesKeyOnlyIfNeeded`
-    // it never takes keyboard focus from the app you're typing in.
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// Key status has to be in place before the event reaches SwiftUI, or buttons
+    /// in a non-activating panel ignore real clicks. Only a click takes focus:
+    /// showing the island never does.
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            if !isKeyWindow { makeKey() }
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let view = contentView else { return }
+        let model = PrompterModel.shared
+        let menu = NSMenu()
+        let playing = model.isRunning || model.isCountingDown
+        addItem(to: menu, playing ? "Pause" : "Start", #selector(toggleRunning))
+        menu.addItem(.separator())
+        addItem(to: menu, "Paste Script", #selector(pasteScript))
+        addItem(to: menu, "Clear Script", #selector(clearScript))
+        menu.addItem(.separator())
+        addItem(to: menu, "Script Editor\u{2026}", #selector(openEditor))
+        addItem(to: menu, "Settings\u{2026}", #selector(openSettings))
+        menu.addItem(.separator())
+        addItem(to: menu, "Hide Island", #selector(hideIsland))
+        NSMenu.popUpContextMenu(menu, with: event, for: view)
+    }
+
+    private func addItem(to menu: NSMenu, _ title: String, _ action: Selector) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+    }
+
+    @objc private func toggleRunning() { PrompterModel.shared.toggleRunning() }
+    @objc private func pasteScript() {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return }
+        PrompterModel.shared.pasteScript(text)
+    }
+    @objc private func clearScript() { PrompterModel.shared.clearScript() }
+    @objc private func openEditor() { NSApp.sendAction(#selector(AppDelegate.openScriptEditorFromOverlay), to: nil, from: nil) }
+    @objc private func openSettings() { NSApp.sendAction(#selector(AppDelegate.openSettingsFromOverlay), to: nil, from: nil) }
+    @objc private func hideIsland() { PrompterModel.shared.isOverlayVisible = false }
 }
 
 /// The first click on a window that isn't key would otherwise only focus it.
@@ -53,7 +97,7 @@ final class OverlayWindowController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.becomesKeyOnlyIfNeeded = true
+        panel.becomesKeyOnlyIfNeeded = false
         panel.isMovable = false
         panel.acceptsMouseMovedEvents = true
         panel.sharingType = model.privacyModeEnabled ? .none : .readOnly

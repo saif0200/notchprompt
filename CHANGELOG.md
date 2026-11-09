@@ -12,6 +12,7 @@
 - Fixed reversed natural-scrolling direction, keyboard focus being taken from the frontmost app, and the panel drifting off-centre after a resize.
 - Voice: fixed word tracking stopping after 30 seconds, voice scrolling not starting on first enable, a crash with no input device, and the microphone staying on while paused.
 - Import: fixed hangs on documents over 64 KB, garbage from binary files, PowerPoint slides out of order past 9, and undecoded XML entities.
+- Keeps the 1.1.2 and 1.1.3 work: real-Button controls, macOS 14 and Intel support, paste and clear controls.
 - Privacy toggle moved to Control+Option+Command+H so Option+Command+H stays Hide Others.
 
 
