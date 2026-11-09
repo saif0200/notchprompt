@@ -14,6 +14,7 @@ enum ScriptFileIOError: LocalizedError {
     case unsupportedImportFormat(String)
     case unsupportedExportFormat(String)
     case documentConversionFailed(String)
+    case noTextFound(String)
 
     var errorDescription: String? {
         switch self {
@@ -25,6 +26,8 @@ enum ScriptFileIOError: LocalizedError {
             return "Export format .\(ext) is not supported."
         case .documentConversionFailed(let ext):
             return "Couldn't convert the .\(ext) document."
+        case .noTextFound(let message):
+            return message
         }
     }
 }
@@ -58,8 +61,22 @@ enum ScriptFileIO {
     private static func importTextSync(from url: URL) throws -> String {
         let ext = url.pathExtension.lowercased()
 
-        if importPdfExtensions.contains(ext), let text = importPDFText(url) {
+        if importPdfExtensions.contains(ext) {
+            guard let text = importPDFText(url) else {
+                throw ScriptFileIOError.noTextFound("This PDF has no selectable text. A scanned PDF needs OCR first.")
+            }
             return text
+        }
+
+        if ext == "pptx" {
+            guard let text = importPowerPointNotes(url) else {
+                throw ScriptFileIOError.noTextFound("This presentation has no speaker notes to import.")
+            }
+            return text
+        }
+
+        if ext == "pages" {
+            throw ScriptFileIOError.noTextFound("Pages files can't be read directly. In Pages, choose File, Export To, Word, then import that.")
         }
 
         if importOfficeExtensions.contains(ext) {
@@ -120,7 +137,7 @@ enum ScriptFileIO {
     ]
 
     private static let importOfficeExtensions: Set<String> = [
-        "docx", "doc", "odt", "pages"
+        "docx", "doc", "odt"
     ]
 
     private static let importRichExtensions: Set<String> = [
@@ -144,17 +161,8 @@ enum ScriptFileIO {
     ]
 
     private static func importDirectText(_ url: URL) -> String? {
-        if let data = try? Data(contentsOf: url) {
-            for encoding in [String.Encoding.utf8, .utf16, .unicode, .isoLatin1, .macOSRoman] {
-                if let decoded = String(data: data, encoding: encoding) {
-                    let trimmed = decoded.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        return decoded
-                    }
-                }
-            }
-        }
-        return nil
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return ScriptTextDecoding.decode(data)
     }
 
     private static func importPDFText(_ url: URL) -> String? {
@@ -202,19 +210,22 @@ enum ScriptFileIO {
 
         let output = Pipe()
         process.standardOutput = output
-        process.standardError = Pipe()
+        process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
         } catch {
             return nil
         }
+        // Read before waiting: textutil blocks once the pipe's buffer fills, so
+        // waiting first hangs forever on any document over about 64 KB of text.
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
             return nil
         }
-        return output.fileHandleForReading.readDataToEndOfFile()
+        return data
     }
 
     private static func importOfficeAttributedText(_ url: URL) -> String? {
@@ -253,6 +264,41 @@ enum ScriptFileIO {
             }
         }
         return nil
+    }
+
+    private static func importPowerPointNotes(_ url: URL) -> String? {
+        // .pptx files are ZIP archives. Notes are in ppt/notesSlides/notesSlide*.xml
+        let tempDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Unzip using ditto
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-xk", url.path, tempDir.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+
+        let notesDir = tempDir.appendingPathComponent("ppt/notesSlides")
+        guard let noteFiles = try? FileManager.default.contentsOfDirectory(at: notesDir, includingPropertiesForKeys: nil) else {
+            return nil
+        }
+
+        let names = noteFiles
+            .filter { $0.pathExtension.lowercased() == "xml" }
+            .map(\.lastPathComponent)
+
+        let allNotes = ScriptTextDecoding.sortedByNumber(names).compactMap { name -> String? in
+            guard let data = try? Data(contentsOf: notesDir.appendingPathComponent(name)) else { return nil }
+            let text = ScriptTextDecoding.pptxNoteText(xml: data)
+            return text.isEmpty ? nil : text
+        }
+
+        let combined = allNotes.joined(separator: "\n\n---\n\n")
+        return combined.isEmpty ? nil : combined
     }
 
     private static func runOnBackgroundQueue<T>(_ block: @escaping () throws -> T) async throws -> T {

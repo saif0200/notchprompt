@@ -30,3 +30,6 @@ dist/*.dmg
 *.xccheckout
 *.xcscmblueprint
 *~.nib
+
+# Fetched by scripts/fetch-whisper-model.sh
+Models/

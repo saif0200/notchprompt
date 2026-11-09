@@ -10,59 +10,97 @@ import SwiftUI
 
 struct ScriptEditorView: View {
     @ObservedObject private var model = PrompterModel.shared
+    @ObservedObject private var library = ScriptLibraryManager.shared
     @State private var fileErrorMessage: String?
+    @State private var didJustSave = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Button("Import...") {
-                    Task {
-                        await importScriptAsync()
-                    }
-                }
-
-                Button("Export...") {
-                    Task {
-                        await exportScriptAsync()
-                    }
-                }
-
-                Spacer()
-
-                Text("Estimated read time: \(model.formattedEstimatedReadDuration())")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-
+        VStack(spacing: 0) {
             TextEditor(text: $model.script)
-                .font(.system(size: 13, design: .monospaced))
+                .font(.system(size: 15))
+                .lineSpacing(4)
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+
+            Divider()
+
+            HStack(spacing: 12) {
+                Text("\(model.wordCount) words")
+                Text("About \(model.formattedEstimatedReadDuration()) at \(Int(model.effectiveWordsPerMinute)) wpm")
+                Spacer()
+                Text("A line of three dashes (---) starts a new section")
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
-        .padding(14)
-        .alert("File Operation Failed", isPresented: Binding(
+        .background(Color(nsColor: .textBackgroundColor))
+        .toolbar {
+            ToolbarItemGroup {
+                Button {
+                    Task { await importScript() }
+                } label: {
+                    Label("Import", systemImage: "square.and.arrow.down")
+                }
+                .help("Import a text, Word, PDF or PowerPoint file")
+
+                Button {
+                    Task { await exportScript() }
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .help("Export this script")
+
+                Button {
+                    saveToLibrary()
+                } label: {
+                    Label(didJustSave ? "Saved" : "Save to Library", systemImage: didJustSave ? "checkmark" : "bookmark")
+                }
+                .help("Save this script to your library")
+
+                Button {
+                    NSApp.sendAction(#selector(AppDelegate.openScriptLibraryFromEditor), to: nil, from: nil)
+                } label: {
+                    Label("Library", systemImage: "books.vertical")
+                }
+                .help("Open your script library")
+            }
+        }
+        .alert("That didn't work", isPresented: Binding(
             get: { fileErrorMessage != nil },
-            set: { _ in fileErrorMessage = nil }
+            set: { if !$0 { fileErrorMessage = nil } }
         )) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(fileErrorMessage ?? "This file operation could not be completed.")
+            Text(fileErrorMessage ?? "")
+        }
+    }
+
+    private func saveToLibrary() {
+        library.save(content: model.script)
+        didJustSave = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            didJustSave = false
         }
     }
 
     @MainActor
-    private func importScriptAsync() async {
-        let url = await FilePanelCoordinator.presentImportPanel(from: NSApp.keyWindow)
-        guard let url else { return }
+    private func importScript() async {
+        guard let url = await FilePanelCoordinator.presentImportPanel(from: NSApp.keyWindow) else { return }
         do {
-            model.script = try await ScriptFileIO.importText(from: url)
+            model.loadScript(try await ScriptFileIO.importText(from: url))
         } catch {
             fileErrorMessage = error.localizedDescription
         }
     }
 
     @MainActor
-    private func exportScriptAsync() async {
-        let url = await FilePanelCoordinator.presentExportPanel(from: NSApp.keyWindow)
-        guard let url else { return }
+    private func exportScript() async {
+        guard let url = await FilePanelCoordinator.presentExportPanel(from: NSApp.keyWindow) else { return }
         do {
             try await ScriptFileIO.exportText(model.script, to: url)
         } catch {
@@ -70,4 +108,3 @@ struct ScriptEditorView: View {
         }
     }
 }
-

@@ -10,6 +10,9 @@ STAGING_DIR="$ROOT_DIR/build/dmg-staging"
 OUTPUT_DMG="$OUTPUT_DIR/notchprompt-${VERSION}-macos.dmg"
 VOLUME_NAME="Notchprompt"
 
+echo "==> Fetching the bundled Whisper model"
+zsh "$ROOT_DIR/scripts/fetch-whisper-model.sh"
+
 echo "==> Building Release app for ${VERSION}"
 xcodebuild \
   -project "$ROOT_DIR/notchprompt.xcodeproj" \
