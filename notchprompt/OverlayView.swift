@@ -88,6 +88,8 @@ private struct AppleNotchShape: InsettableShape {
 
 struct OverlayView: View {
     @ObservedObject var model: PrompterModel
+    @State private var showControls = false
+    private var controlsShown: Bool { showControls || !model.autoHideControls }
 
     var body: some View {
         // Ratio-driven contour tuned to Apple notch geometry and scaled to the
@@ -121,6 +123,7 @@ struct OverlayView: View {
                 fontSize: CGFloat(model.fontSize),
                 speedPointsPerSecond: model.speedPointsPerSecond,
                 isRunning: model.isRunning,
+                voiceGateOpen: model.isVoiceGateOpen,
                 hasStartedSession: model.hasStartedSession,
                 resetToken: model.resetToken,
                 jumpBackToken: model.jumpBackToken,
@@ -129,8 +132,9 @@ struct OverlayView: View {
                 manualScrollDeltaPoints: model.manualScrollDeltaPoints,
                 fadeFraction: CGFloat(model.edgeFadeFraction),
                 backgroundOpacity: model.backgroundOpacity,
-                isHovering: false,
+                isHovering: showControls && model.pauseOnHover,
                 scrollMode: model.scrollMode,
+                followProgress: model.isFollowingWords ? model.followProgress : nil,
                 savedScrollPhaseForResume: model.savedScrollPhaseForResume,
                 onSaveScrollPhaseForResume: { phase in
                     model.saveScrollPhaseForResume(phase)
@@ -139,11 +143,17 @@ struct OverlayView: View {
                     if model.isRunning {
                         model.markReachedEndInStopMode()
                     }
-                }
+                },
+                followGlideSpeed: CGFloat(model.followGlideSpeed),
+                followJumpBoost: CGFloat(model.followJumpBoost),
+                followReadingLine: CGFloat(model.followReadingLine)
             )
-            .padding(.horizontal, 18)
-            .padding(.top, 58)
-            .padding(.bottom, 16)
+            // Clear of the side button columns; the top only needs to clear the camera notch.
+            // Wider now the controls hide, but still well short of the edges so reading looks like eye contact.
+            // Always-visible side buttons reach ~52pt in from the edge.
+            .padding(.horizontal, model.autoHideControls ? model.textSideMargin : max(model.textSideMargin, 52))
+            .padding(.top, model.textTopOffset)
+            .padding(.bottom, 12)
             .clipShape(Rectangle())
             .overlay {
                 TrackpadScrollCaptureView { delta in
@@ -151,32 +161,51 @@ struct OverlayView: View {
                 }
             }
             
+            if model.glowEnabled && model.voiceMode != .off && model.isRunning && (model.voiceIsSpeaking || model.glowRestingLine) {
+                // Light rising from the floor: half of a feathered ellipse sits below the bottom edge and is clipped,
+                // so it fades up from a flat base. It swells with loudness like Voice Memos; silent, it is a thin line.
+                let level = model.voiceIsSpeaking ? max(model.voiceLevel, 0.15) : 0
+                let glowHeight = (8 + 26 * level) * model.glowIntensity
+                Ellipse()
+                    .fill(model.glowColor)
+                    .frame(width: model.overlayWidth * (0.30 + 0.12 * level) * model.glowWidth, height: level > 0 ? glowHeight : 4)
+                    .blur(radius: level > 0 ? 7 + 5 * level : 0.5)
+                    .opacity(min(1, (level > 0 ? 0.45 + 0.55 * level : 0.85) * model.glowIntensity))
+                    .offset(y: level > 0 ? glowHeight / 2 : 2)
+                    .animation(.easeOut(duration: 0.12), value: level)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .clipped()
+                    .allowsHitTesting(false)
+            }
+
             if !model.isCountingDown {
-                HStack {
-                    HStack(spacing: 6) {
+                // Controls run down both sides so the notch keeps the top clear and the text sits in the middle.
+                HStack(alignment: .center) {
+                    VStack(spacing: 4) {
                         OverlayControlButton(
                             symbol: (model.isRunning || model.isCountingDown) ? "hand.draw.fill" : "play.fill"
                         ) {
                             model.switchPlaybackModeFromOverlayControl()
                         }
                         .help((model.isRunning || model.isCountingDown) ? "Pause and switch to manual trackpad scroll" : "Start auto scroll")
-                        
-                        OverlayControlButton(symbol: "gobackward.5") {
+
+                        OverlayControlButton(symbol: model.isFollowingWords ? "arrow.counterclockwise" : "gobackward.5") {
                             model.jumpBack(seconds: 5)
                         }
-                        .help("Jump back 5 seconds")
+                        .help(model.isFollowingWords ? "Restart from the top" : "Jump back 5 seconds")
+
+                        OverlayControlButton(symbol: "gearshape") {
+                            NotificationCenter.default.post(name: .openNotchpromptSettings, object: nil)
+                        }
+                        .help("Settings")
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.7), in: Capsule())
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                    )
-                    
+                    .modifier(OverlayControlColumn())
+                    .offset(x: controlsShown ? 0 : -64)
+                    .opacity(controlsShown ? 1 : 0)
+
                     Spacer(minLength: 8)
-                    
-                    HStack(spacing: 6) {
+
+                    VStack(spacing: 3) {
                         OverlayControlButton(symbol: "doc.on.clipboard") {
                             if let text = NSPasteboard.general.string(forType: .string) {
                                 model.pasteScript(text)
@@ -204,17 +233,13 @@ struct OverlayView: View {
                         }
                         .help("Quit Notchprompt")
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.7), in: Capsule())
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                    )
+                    .modifier(OverlayControlColumn())
+                    .offset(x: controlsShown ? 0 : 64)
+                    .opacity(controlsShown ? 1 : 0)
                 }
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             if model.isCountingDown {
@@ -229,6 +254,9 @@ struct OverlayView: View {
             }
         }
         .frame(width: model.overlayWidth, height: model.overlayHeight)
+        .onHover { hovering in
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { showControls = hovering }
+        }
     }
 }
 
@@ -393,5 +421,15 @@ final class ScrollCaptureNSView: NSView {
 
     override func scrollWheel(with event: NSEvent) {
         onScroll?(event)
+    }
+}
+
+private struct OverlayControlColumn: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 4)
+            .padding(.vertical, 5)
+            .background(Color.black.opacity(0.7), in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
     }
 }

@@ -28,6 +28,8 @@ Native macOS notch-adjacent teleprompter for presentations and recordings.
 - Optional countdown before scrolling starts.
 - Import/export plain text scripts.
 - Privacy mode (`NSWindow.SharingType`, best-effort/app-dependent).
+- Voice control: **Start-stop** scrolls only while you speak; **Follow my words** uses on-device speech recognition to keep the script at the words you're saying. Audio and transcripts never leave the Mac.
+- Hover-revealed side controls and a speaking glow that reacts to your voice, all tunable in Settings.
 
 ## Requirements
 

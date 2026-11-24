@@ -20,16 +20,36 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 12) {
                 headerSection
                 playbackSection
-                appearanceSection
+                voiceSection
+                glowSection
+                layoutSection
+                controlsSection
                 displaySection
                 privacySection
                 shortcutsSection
+                Button("Reset all to defaults") { model.resetTuningToDefaults() }
             }
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .modifier(ScrollBounceBehaviorModifier())
         .frame(minWidth: 620, minHeight: 460)
+    }
+
+    private var voiceCaption: String {
+        if model.voicePermissionDenied {
+            return "Microphone access is off. Enable it in System Settings > Privacy & Security > Microphone."
+        }
+        guard model.voiceMode == .followWords else {
+            return "The script scrolls while you speak and eases to a stop when you pause. Audio is never recorded."
+        }
+        if model.speechPermissionDenied {
+            return "Speech recognition access is off. Enable it in System Settings > Privacy & Security > Speech Recognition. Falling back to start-stop."
+        }
+        if model.speechUnavailable {
+            return "On-device speech recognition isn't available for your language on this Mac. Falling back to start-stop."
+        }
+        return "Scrolls to the words you're saying. Speech is recognised on this Mac and never sent anywhere."
     }
 
     private var headerSection: some View {
@@ -99,26 +119,131 @@ struct ContentView: View {
         }
     }
 
-    private var appearanceSection: some View {
-        SettingsSection(title: "Appearance") {
+    private var voiceSection: some View {
+        SettingsSection(title: "Voice") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Voice")
+                        .frame(width: rowLabelWidth, alignment: .leading)
+                    Picker("", selection: $model.voiceMode) {
+                        Text("Off").tag(PrompterModel.VoiceMode.off)
+                        Text("Start-stop").tag(PrompterModel.VoiceMode.startStop)
+                        Text("Follow my words").tag(PrompterModel.VoiceMode.followWords)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                }
+                if model.voiceMode != .off {
+                    sliderRow(
+                        title: "Mic sensitivity",
+                        valueText: "\(Int(model.voiceSensitivity * 100))",
+                        slider: Slider(value: $model.voiceSensitivity, in: 0...1)
+                    )
+                }
+                if model.voiceMode == .followWords {
+                    sliderRow(
+                        title: "Line glide speed",
+                        valueText: String(format: "%.1f", model.followGlideSpeed),
+                        slider: Slider(value: $model.followGlideSpeed, in: 2...12)
+                    )
+                    sliderRow(
+                        title: "Paragraph jump speed",
+                        valueText: String(format: "%.1f", model.followJumpBoost),
+                        slider: Slider(value: $model.followJumpBoost, in: 1...6)
+                    )
+                    sliderRow(
+                        title: "Reading line position",
+                        valueText: "\(Int(model.followReadingLine * 100))%",
+                        slider: Slider(value: $model.followReadingLine, in: 0...1)
+                    )
+                    HStack {
+                        Spacer().frame(width: rowLabelWidth)
+                        Text("Top").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("Middle").font(.caption).foregroundStyle(.secondary)
+                        Spacer().frame(width: valueWidth)
+                    }
+                }
+                if model.voiceMode != .off {
+                    Text(voiceCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var glowSection: some View {
+        SettingsSection(title: "Voice glow") {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Show glow while speaking", isOn: $model.glowEnabled)
+                Group {
+                    HStack {
+                        Text("Colour")
+                            .frame(width: rowLabelWidth, alignment: .leading)
+                        ColorPicker("", selection: $model.glowColor, supportsOpacity: false)
+                            .labelsHidden()
+                        Button("Reset colour") { model.resetGlowColor() }
+                            .buttonStyle(.link)
+                        Spacer(minLength: 0)
+                    }
+                    sliderRow(
+                        title: "Width",
+                        valueText: String(format: "%.1fx", model.glowWidth),
+                        slider: Slider(value: $model.glowWidth, in: 0.5...2.0)
+                    )
+                    sliderRow(
+                        title: "Intensity",
+                        valueText: String(format: "%.1fx", model.glowIntensity),
+                        slider: Slider(value: $model.glowIntensity, in: 0.4...1.6)
+                    )
+                    Toggle("Thin line while silent", isOn: $model.glowRestingLine)
+                }
+                .disabled(!model.glowEnabled)
+            }
+        }
+    }
+
+    private var layoutSection: some View {
+        SettingsSection(title: "Text & layout") {
             VStack(alignment: .leading, spacing: 12) {
                 sliderRow(
                     title: "Font size",
                     valueText: "\(Int(model.fontSize))",
                     slider: Slider(value: $model.fontSize, in: 12...40, step: 1)
                 )
-
+                sliderRow(
+                    title: "Text side margin",
+                    valueText: "\(Int(model.textSideMargin))",
+                    slider: Slider(value: $model.textSideMargin, in: 16...90, step: 1)
+                )
+                Text("Keep the text near the camera so reading looks natural.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                sliderRow(
+                    title: "Text top offset (clear the notch)",
+                    valueText: "\(Int(model.textTopOffset))",
+                    slider: Slider(value: $model.textTopOffset, in: 30...70, step: 1)
+                )
                 sliderRow(
                     title: "Overlay width",
                     valueText: "\(Int(model.overlayWidth))",
                     slider: Slider(value: $model.overlayWidth, in: 400...1200, step: 10)
                 )
-
                 sliderRow(
                     title: "Overlay height",
                     valueText: "\(Int(model.overlayHeight))",
                     slider: Slider(value: $model.overlayHeight, in: 120...300, step: 2)
                 )
+            }
+        }
+    }
+
+    private var controlsSection: some View {
+        SettingsSection(title: "Controls") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Auto-hide side controls", isOn: $model.autoHideControls)
+                Toggle("Pause scrolling on hover", isOn: $model.pauseOnHover)
             }
         }
     }

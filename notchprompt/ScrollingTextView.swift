@@ -12,6 +12,7 @@ struct ScrollingTextView: View {
     let fontSize: CGFloat
     let speedPointsPerSecond: Double
     let isRunning: Bool
+    let voiceGateOpen: Bool
     let hasStartedSession: Bool
     let resetToken: UUID
     let jumpBackToken: UUID
@@ -22,6 +23,8 @@ struct ScrollingTextView: View {
     let backgroundOpacity: Double
     let isHovering: Bool
     let scrollMode: PrompterModel.ScrollMode
+    /// Non-nil while following the user's speech: the script glides to this fraction instead of scrolling at a fixed speed.
+    let followProgress: Double?
     let savedScrollPhaseForResume: CGFloat?
     let onSaveScrollPhaseForResume: ((CGFloat) -> Void)?
     let onReachedEnd: (() -> Void)?
@@ -32,6 +35,8 @@ struct ScrollingTextView: View {
 
     @State private var contentHeight: CGFloat = 1
     @State private var viewportHeight: CGFloat = 0
+    @State private var viewportWidth: CGFloat = 0
+    @State private var wordLayout = WordLayout()
     @State private var phase: CGFloat = 0
     @State private var lastTickDate: Date?
     @State private var targetSpeedMultiplier: Double = 1.0
@@ -42,6 +47,15 @@ struct ScrollingTextView: View {
 
     // Smooth deceleration/acceleration rate (0-1, higher = faster)
     private let speedLerpFactor: Double = 8.0
+
+    // Following maps progress onto one copy of the script, so it renders like stop-at-end.
+    private var mode: PrompterModel.ScrollMode {
+        followProgress == nil ? scrollMode : .stopAtEnd
+    }
+
+    let followGlideSpeed: CGFloat
+    let followJumpBoost: CGFloat
+    let followReadingLine: CGFloat
 
     private var hasContent: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -111,7 +125,7 @@ struct ScrollingTextView: View {
     }
 
     private func repetitionCount(for viewportHeight: CGFloat) -> Int {
-        if scrollMode == .stopAtEnd { return 1 }
+        if mode == .stopAtEnd { return 1 }
         let minimumCopies = 3
         let needed = Int(ceil(viewportHeight / cycleLength)) + 2
         return max(minimumCopies, needed)
@@ -150,7 +164,11 @@ struct ScrollingTextView: View {
                 .frame(width: viewportProxy.size.width, height: viewportProxy.size.height, alignment: .topLeading)
                 .onAppear {
                     viewportHeight = max(viewportProxy.size.height, 0)
+                    viewportWidth = viewportProxy.size.width
                     restoreOrResetPhase()
+                }
+                .onChange(of: viewportProxy.size.width) { _, newWidth in
+                    viewportWidth = newWidth
                 }
                 .onChange(of: viewportProxy.size.height) { _, newHeight in
                     viewportHeight = max(newHeight, 0)
@@ -178,7 +196,7 @@ struct ScrollingTextView: View {
                 .onChange(of: fontSize) { _, _ in
                     normalizeTopAnchorIfNearStart()
                 }
-                .onChange(of: scrollMode) { _, _ in
+                .onChange(of: mode) { _, _ in
                     hasReachedEndInStopMode = false
                     // Clear any stale target; tick() will lazily recompute on the
                     // very first frame it runs in the new mode, avoiding the race
@@ -300,7 +318,7 @@ struct ScrollingTextView: View {
     }
 
     private func desiredSpeedMultiplier() -> Double {
-        (isRunning && !isHovering) ? 1.0 : 0.0
+        (isRunning && !isHovering && voiceGateOpen) ? 1.0 : 0.0
     }
 
     private func applyManualScrollDelta(_ delta: CGFloat) {
@@ -308,7 +326,7 @@ struct ScrollingTextView: View {
         deferredStopTargetPhase = nil
         phase += delta
 
-        if scrollMode == .stopAtEnd, hasMeasuredContentHeight {
+        if mode == .stopAtEnd, hasMeasuredContentHeight {
             phase = min(max(phase, topOfScriptPhaseFloor), endPhase)
             return
         }
@@ -319,14 +337,39 @@ struct ScrollingTextView: View {
         phase = max(phase, topOfScriptPhaseFloor)
     }
 
+    private func followWords(progress: Double, at date: Date) {
+        let dt = lastTickDate.map { max(0, min(CGFloat(date.timeIntervalSince($0)), 0.25)) } ?? CGFloat(Self.activeTickInterval)
+        lastTickDate = date
+        targetSpeedMultiplier = 0
+        currentSpeedMultiplier = 0
+        if Int(date.timeIntervalSince1970 * 2) != Int((date.timeIntervalSince1970 - Double(dt)) * 2) {
+            followLog.info("view progress=\(progress) running=\(isRunning) hover=\(isHovering) measured=\(hasMeasuredContentHeight) phase=\(Double(phase)) h=\(Double(contentHeight))")
+        }
+        // Not hasMeasuredContentHeight: editing the script clears it after the new height has already arrived, freezing follow mode.
+        guard isRunning, !isHovering, contentHeight > 1 else { return }
+        // Paragraph breaks and short lines make offset/length a poor proxy for y, so lay the script out the way the view does.
+        let wordY = wordLayout.y(ofOffset: Int((progress * Double(text.count)).rounded()), in: text, fontSize: fontSize, width: viewportWidth, renderedHeight: contentHeight)
+        let centreAnchor = max(0, (viewportHeight - fontSize * 1.2) / 2 - startAnchorOffset)
+        let anchor = startAnchorOffset + followReadingLine * centreAnchor
+        let target = min(max(wordY - anchor, topOfScriptPhaseFloor), endPhase)
+        // Line-to-line moves glide; bigger jumps (paragraph breaks) move faster so they don't lag behind the reader.
+        let rate = abs(target - phase) > fontSize * 1.5 ? followGlideSpeed * followJumpBoost : followGlideSpeed
+        phase += (target - phase) * min(1, rate * dt)
+    }
+
     private func tick(at date: Date) {
         guard hasContent else {
             lastTickDate = date
             return
         }
 
+        if let followProgress {
+            followWords(progress: followProgress, at: date)
+            return
+        }
+
         // Authoritative per-frame run state; don't rely on onChange timing.
-        let shouldRun = (isRunning && !isHovering) && !(scrollMode == .stopAtEnd && hasReachedEndInStopMode)
+        let shouldRun = (isRunning && !isHovering && voiceGateOpen) && !(mode == .stopAtEnd && hasReachedEndInStopMode)
         targetSpeedMultiplier = shouldRun ? 1.0 : 0.0
 
         let totalDt: CGFloat
@@ -357,7 +400,7 @@ struct ScrollingTextView: View {
             // Lazily compute the stop target on the first tick after entering
             // stopAtEnd mode. This runs in the same code path that checks the
             // threshold, so there is no race with onChange timing.
-            if scrollMode == .stopAtEnd, deferredStopTargetPhase == nil,
+            if mode == .stopAtEnd, deferredStopTargetPhase == nil,
                hasMeasuredContentHeight, !hasReachedEndInStopMode {
                 let vis = phase.truncatingRemainder(dividingBy: cycleLength)
                 let cs = phase - vis
@@ -366,7 +409,7 @@ struct ScrollingTextView: View {
                     : cs + cycleLength + endPhase
             }
 
-            if scrollMode == .stopAtEnd, hasMeasuredContentHeight,
+            if mode == .stopAtEnd, hasMeasuredContentHeight,
                let target = deferredStopTargetPhase, phase >= target {
                 phase = target
                 targetSpeedMultiplier = 0
@@ -388,7 +431,7 @@ struct ScrollingTextView: View {
             currentSpeedMultiplier = 0
         }
 
-        if scrollMode == .infinite, phase >= cycleLength * 8 {
+        if mode == .infinite, phase >= cycleLength * 8 {
             phase = phase.truncatingRemainder(dividingBy: cycleLength)
         }
     }
@@ -410,5 +453,35 @@ private extension View {
                     .preference(key: ContentHeightPreferenceKey.self, value: proxy.size.height)
             }
         )
+    }
+}
+
+/// Top y of the line holding a script character, from an AppKit layout that mirrors the on-screen Text.
+final class WordLayout {
+    private var key: (text: String, fontSize: CGFloat, width: CGFloat)?
+    private var manager = NSLayoutManager()
+    // NSLayoutManager holds its text storage weakly; without this the layout is empty and every word maps to y = 0.
+    private var storage = NSTextStorage()
+    private var totalHeight: CGFloat = 1
+
+    func y(ofOffset offset: Int, in text: String, fontSize: CGFloat, width: CGFloat, renderedHeight: CGFloat) -> CGFloat {
+        if key?.text != text || key?.fontSize != fontSize || key?.width != width {
+            storage = NSTextStorage(string: text, attributes: [.font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)])
+            let container = NSTextContainer(size: CGSize(width: max(width, 1), height: .greatestFiniteMagnitude))
+            container.lineFragmentPadding = 0
+            manager = NSLayoutManager()
+            manager.addTextContainer(container)
+            storage.addLayoutManager(manager)
+            manager.ensureLayout(for: container)  // usedRect is 0 until layout has run
+            totalHeight = max(manager.usedRect(for: container).height, 1)
+            key = (text, fontSize, width)
+        }
+        let index = text.index(text.startIndex, offsetBy: min(offset, text.count))
+        let utf16 = min(text.utf16.distance(from: text.utf16.startIndex, to: index), max(0, manager.numberOfGlyphs - 1))
+        guard manager.numberOfGlyphs > 0 else { return 0 }
+        let glyph = manager.glyphIndexForCharacter(at: utf16)
+        let lineY = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil).minY
+        // SwiftUI's line height can differ slightly from AppKit's; rescale to the height actually rendered.
+        return lineY * renderedHeight / totalHeight
     }
 }
