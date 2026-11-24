@@ -263,9 +263,12 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Notchprompt listens for your voice to scroll the script while you speak. Audio is never recorded or sent anywhere.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Notchprompt recognises your speech on this Mac to keep the script at the words you're saying. Nothing is recorded or sent anywhere.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -295,9 +298,12 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Notchprompt listens for your voice to scroll the script while you speak. Audio is never recorded or sent anywhere.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Notchprompt recognises your speech on this Mac to keep the script at the words you're saying. Nothing is recorded or sent anywhere.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

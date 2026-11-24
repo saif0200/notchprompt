@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     private var startPauseItem: NSMenuItem?
     private var showOverlayItem: NSMenuItem?
+    private var voiceActivationItem: NSMenuItem?
     private var privacyModeItem: NSMenuItem?
     private var speedUpItem: NSMenuItem?
     private var speedDownItem: NSMenuItem?
@@ -33,6 +34,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         self?.performShortcut(command)
     }
 
+    // The "NP" status item can be hidden behind the notch on a crowded menu bar; opening the app again must still reach Settings.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        openMainWindow()
+        return true
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         model.loadFromDefaults()
         overlayController = OverlayWindowController(model: model)
@@ -40,6 +47,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
 #if DEBUG
         ScreenSelectionSelfTests.run()
+        VoiceGateSelfTests.run()
+        ScriptTrackerSelfTests.run()
         runShortcutSelfChecks()
 #endif
 
@@ -48,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         hotkeyManager.registerAll()
         setupStatusBar()
         installEditKeyHandler()
+        NotificationCenter.default.addObserver(self, selector: #selector(openMainWindow), name: .openNotchpromptSettings, object: nil)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -103,6 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         Publishers.MergeMany(
             model.$script.map { _ in () }.eraseToAnyPublisher(),
             model.$isRunning.map { _ in () }.eraseToAnyPublisher(),
+            model.$voiceMode.map { _ in () }.eraseToAnyPublisher(),
+            model.$voiceSensitivity.map { _ in () }.eraseToAnyPublisher(),
             model.$privacyModeEnabled.map { _ in () }.eraseToAnyPublisher(),
             model.$speedPointsPerSecond.map { _ in () }.eraseToAnyPublisher(),
             model.$fontSize.map { _ in () }.eraseToAnyPublisher(),
@@ -111,7 +123,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             model.$countdownSeconds.map { _ in () }.eraseToAnyPublisher(),
             model.$countdownBehavior.map { _ in () }.eraseToAnyPublisher(),
             model.$scrollMode.map { _ in () }.eraseToAnyPublisher(),
-            model.$selectedScreenID.map { _ in () }.eraseToAnyPublisher()
+            model.$selectedScreenID.map { _ in () }.eraseToAnyPublisher(),
+            model.tuningChanged
         )
         .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
         .sink { [weak self] in
@@ -186,6 +199,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         privacyMode.keyEquivalentModifierMask = shortcutModifiers
         menu.addItem(privacyMode)
         privacyModeItem = privacyMode
+
+        let voiceActivation = NSMenuItem(
+            title: "Voice Scrolling",
+            action: #selector(toggleVoiceActivation),
+            keyEquivalent: ""
+        )
+        voiceActivation.target = self
+        menu.addItem(voiceActivation)
+        voiceActivationItem = voiceActivation
 
         let showOverlay = NSMenuItem(
             title: "Show Overlay",
@@ -271,6 +293,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func toggleRunning() {
         model.toggleRunning()
+    }
+
+    @objc private func toggleVoiceActivation() {
+        model.toggleVoice()
     }
 
     @objc private func resetScroll() {
@@ -411,6 +437,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return true
         }
         
+        if menuItem === voiceActivationItem {
+            menuItem.state = model.voiceMode != .off ? .on : .off
+            return true
+        }
+
         if menuItem === showOverlayItem {
             menuItem.state = model.isOverlayVisible ? .on : .off
             return true
@@ -422,4 +453,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         return true
     }
+}
+
+extension Notification.Name {
+    /// Posted by the overlay's gear button; SwiftUI wraps the app delegate, so a cast to AppDelegate isn't reliable.
+    static let openNotchpromptSettings = Notification.Name("openNotchpromptSettings")
 }

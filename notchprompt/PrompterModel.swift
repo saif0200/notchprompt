@@ -8,6 +8,8 @@
 import Foundation
 import Combine
 import CoreGraphics
+import AppKit
+import SwiftUI
 
 @MainActor
 final class PrompterModel: ObservableObject {
@@ -33,30 +35,82 @@ final class PrompterModel: ObservableObject {
         }
     }
 
+    enum VoiceMode: String, CaseIterable {
+        case off
+        case startStop
+        case followWords
+    }
+
     static let shared = PrompterModel()
 
     @Published var script: String = """
 Paste your script here.
 
 Tip: Use the menu bar icon to start/pause or reset the scroll.
-"""
+""" { didSet { speechFollower.setScript(script) } }
 
-    @Published var isRunning: Bool = false
+    @Published var isRunning: Bool = false { didSet { syncVoiceMonitor() } }
     @Published var manualScrollEnabled: Bool = false
     @Published var isOverlayVisible: Bool = true
     @Published var privacyModeEnabled: Bool = true
     @Published private(set) var hasStartedSession: Bool = false
-    @Published private(set) var isCountingDown: Bool = false
+    @Published private(set) var isCountingDown: Bool = false { didSet { syncVoiceMonitor() } }
     @Published var countdownSeconds: Int = 3
     @Published var countdownBehavior: CountdownBehavior = .freshStartOnly
     @Published private(set) var countdownRemaining: Int = 0
     @Published private(set) var didReachEndInStopMode: Bool = false
 
+    @Published var voiceMode: VoiceMode = .off {
+        didSet {
+            if voiceMode != .off { lastActiveVoiceMode = voiceMode }
+            syncVoiceMonitor()
+        }
+    }
+    private(set) var lastActiveVoiceMode: VoiceMode = .startStop
+    @Published var voiceSensitivity: Double = 0.5 { didSet { voiceMonitor.sensitivity = voiceSensitivity } }
+    // Voice glow
+    @Published var glowEnabled: Bool = Defaults.glowEnabled
+    @Published var glowColor: Color = Defaults.glowColor
+    @Published var glowWidth: Double = Defaults.glowWidth
+    @Published var glowIntensity: Double = Defaults.glowIntensity
+    @Published var glowRestingLine: Bool = Defaults.glowRestingLine
+    // Follow my words
+    @Published var followGlideSpeed: Double = Defaults.followGlideSpeed
+    @Published var followJumpBoost: Double = Defaults.followJumpBoost
+    @Published var followReadingLine: Double = Defaults.followReadingLine
+    // Layout and controls
+    @Published var textSideMargin: Double = Defaults.textSideMargin
+    @Published var textTopOffset: Double = Defaults.textTopOffset
+    @Published var autoHideControls: Bool = Defaults.autoHideControls
+    @Published var pauseOnHover: Bool = Defaults.pauseOnHover
+
+    @Published private(set) var voiceIsSpeaking: Bool = false
+    @Published private(set) var voiceLevel: Double = 0
+    @Published private(set) var voicePermissionDenied: Bool = false
+    @Published private(set) var voiceUnavailable: Bool = false
+    @Published private(set) var speechPermissionDenied: Bool = false
+    @Published private(set) var speechUnavailable: Bool = false
+    @Published private(set) var followProgress: Double = 0
+
+    /// True when the script may scroll. Fails open if the mic is denied so the prompter still works.
+    var isVoiceGateOpen: Bool {
+        voiceMode == .off || voicePermissionDenied || voiceUnavailable || voiceIsSpeaking
+    }
+
+    /// Follow mode only drives the scroll when speech can work; otherwise it falls back to the voice gate.
+    var isFollowingWords: Bool {
+        voiceMode == .followWords && !voicePermissionDenied && !voiceUnavailable
+            && !speechPermissionDenied && !speechUnavailable
+    }
+
+    private let voiceMonitor = AudioLevelMonitor()
+    private let speechFollower = SpeechFollower()
+
     // Visual / behavior tuning
-    @Published var speedPointsPerSecond: Double = 80
-    @Published var fontSize: Double = 20
-    @Published var overlayWidth: Double = 600
-    @Published var overlayHeight: Double = 150
+    @Published var speedPointsPerSecond: Double = Defaults.speed
+    @Published var fontSize: Double = Defaults.fontSize
+    @Published var overlayWidth: Double = Defaults.overlayWidth
+    @Published var overlayHeight: Double = Defaults.overlayHeight
     // Deprecated user setting: keep as a fixed constant unless changed explicitly in code.
     @Published var backgroundOpacity: Double = 1.0
     @Published var scrollMode: ScrollMode = .infinite
@@ -82,7 +136,41 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
     static let speedPresetNormal: Double = 85
     static let speedPresetFast: Double = 125
 
+    // Single source of truth for tunable defaults, used by property initialisers and "Reset all".
+    private enum Defaults {
+        static let glowEnabled = true
+        static let glowColor = Color(red: 0.62, green: 0.24, blue: 0.08)
+        static let glowWidth = 1.0
+        static let glowIntensity = 1.0
+        static let glowRestingLine = true
+        static let followGlideSpeed = 5.0
+        static let followJumpBoost = 3.5
+        static let followReadingLine = 0.0
+        static let textSideMargin = 34.0
+        static let textTopOffset = 38.0
+        static let autoHideControls = true
+        // Hover pausing was hard-wired off in the overlay, so off keeps today's behaviour.
+        static let pauseOnHover = false
+        static let speed = 80.0
+        static let fontSize = 22.0
+        static let overlayWidth = 600.0
+        static let overlayHeight = 150.0
+    }
+
     private enum DefaultsKey {
+        static let glowEnabled = "glowEnabled"
+        static let glowColor = "glowColorRGB"
+        static let glowWidth = "glowWidth"
+        static let glowIntensity = "glowIntensity"
+        static let glowRestingLine = "glowRestingLine"
+        static let followGlideSpeed = "followGlideSpeed"
+        static let followJumpBoost = "followJumpBoost"
+        static let followReadingLine = "followReadingLine"
+        static let textSideMargin = "textSideMargin"
+        static let textTopOffset = "textTopOffset"
+        static let autoHideControls = "autoHideControls"
+        static let pauseOnHover = "pauseOnHover"
+
         static let hasSavedSession = "hasSavedSession"
         static let script = "script"
         static let isRunning = "isRunning"
@@ -96,9 +184,22 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         static let countdownBehavior = "countdownBehavior"
         static let scrollMode = "scrollMode"
         static let selectedScreenID = "selectedScreenID"
+        static let voiceActivationEnabled = "voiceActivationEnabled"
+        static let voiceMode = "voiceMode"
+        static let voiceSensitivity = "voiceSensitivity"
     }
 
-    private init() {}
+    private init() {
+        voiceMonitor.$isSpeaking.assign(to: &$voiceIsSpeaking)
+        voiceMonitor.$level.assign(to: &$voiceLevel)
+        voiceMonitor.$permissionDenied.assign(to: &$voicePermissionDenied)
+        voiceMonitor.$unavailable.assign(to: &$voiceUnavailable)
+        speechFollower.$progress.assign(to: &$followProgress)
+        speechFollower.$permissionDenied.assign(to: &$speechPermissionDenied)
+        speechFollower.$unavailable.assign(to: &$speechUnavailable)
+        let sink = speechFollower.sink
+        voiceMonitor.bufferConsumer = { sink.append($0) }
+    }
 
     deinit {
         countdownTask?.cancel()
@@ -117,6 +218,7 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         didReachEndInStopMode = false
         shouldUseCountdownOnNextStart = true
         savedScrollPhaseForResume = nil
+        speechFollower.reset()
         resetToken = UUID()
     }
 
@@ -125,6 +227,8 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
     }
 
     func jumpBack(seconds: Double = 5) {
+        // In follow mode the view snaps back to the spoken position, so this control restarts from the top instead.
+        if isFollowingWords { resetScroll(); return }
         guard seconds > 0 else { return }
         didReachEndInStopMode = false
         jumpBackDistancePoints = CGFloat(speedPointsPerSecond * seconds)
@@ -278,6 +382,45 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         return String(format: "~%dm %02ds", minutes, seconds)
     }
 
+    /// Any tuning change; the app delegate debounces this into a save.
+    var tuningChanged: AnyPublisher<Void, Never> {
+        Publishers.MergeMany(
+            $glowEnabled.map { _ in () }.eraseToAnyPublisher(),
+            $glowColor.map { _ in () }.eraseToAnyPublisher(),
+            $glowWidth.map { _ in () }.eraseToAnyPublisher(),
+            $glowIntensity.map { _ in () }.eraseToAnyPublisher(),
+            $glowRestingLine.map { _ in () }.eraseToAnyPublisher(),
+            $followGlideSpeed.map { _ in () }.eraseToAnyPublisher(),
+            $followJumpBoost.map { _ in () }.eraseToAnyPublisher(),
+            $followReadingLine.map { _ in () }.eraseToAnyPublisher(),
+            $textSideMargin.map { _ in () }.eraseToAnyPublisher(),
+            $textTopOffset.map { _ in () }.eraseToAnyPublisher(),
+            $autoHideControls.map { _ in () }.eraseToAnyPublisher(),
+            $pauseOnHover.map { _ in () }.eraseToAnyPublisher()
+        ).eraseToAnyPublisher()
+    }
+
+    func resetGlowColor() { glowColor = Defaults.glowColor }
+
+    func resetTuningToDefaults() {
+        glowEnabled = Defaults.glowEnabled
+        glowColor = Defaults.glowColor
+        glowWidth = Defaults.glowWidth
+        glowIntensity = Defaults.glowIntensity
+        glowRestingLine = Defaults.glowRestingLine
+        followGlideSpeed = Defaults.followGlideSpeed
+        followJumpBoost = Defaults.followJumpBoost
+        followReadingLine = Defaults.followReadingLine
+        textSideMargin = Defaults.textSideMargin
+        textTopOffset = Defaults.textTopOffset
+        autoHideControls = Defaults.autoHideControls
+        pauseOnHover = Defaults.pauseOnHover
+        speedPointsPerSecond = Defaults.speed
+        fontSize = Defaults.fontSize
+        overlayWidth = Defaults.overlayWidth
+        overlayHeight = Defaults.overlayHeight
+    }
+
     func loadFromDefaults() {
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: DefaultsKey.hasSavedSession) else {
@@ -317,6 +460,30 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
             scrollMode = .infinite
         }
         selectedScreenID = CGDirectDisplayID(defaults.object(forKey: DefaultsKey.selectedScreenID) as? UInt32 ?? 0)
+        if let rawValue = defaults.string(forKey: DefaultsKey.voiceMode), let saved = VoiceMode(rawValue: rawValue) {
+            voiceMode = saved
+        } else {
+            voiceMode = defaults.bool(forKey: DefaultsKey.voiceActivationEnabled) ? .startStop : .off
+        }
+        voiceSensitivity = clamp(defaults.object(forKey: DefaultsKey.voiceSensitivity) as? Double ?? voiceSensitivity, lower: 0, upper: 1)
+
+        func double(_ key: String, _ fallback: Double, _ lower: Double, _ upper: Double) -> Double {
+            clamp(defaults.object(forKey: key) as? Double ?? fallback, lower: lower, upper: upper)
+        }
+        glowEnabled = defaults.object(forKey: DefaultsKey.glowEnabled) as? Bool ?? glowEnabled
+        if let rgb = defaults.array(forKey: DefaultsKey.glowColor) as? [Double], rgb.count == 3 {
+            glowColor = Color(red: rgb[0], green: rgb[1], blue: rgb[2])
+        }
+        glowWidth = double(DefaultsKey.glowWidth, glowWidth, 0.5, 2.0)
+        glowIntensity = double(DefaultsKey.glowIntensity, glowIntensity, 0.4, 1.6)
+        glowRestingLine = defaults.object(forKey: DefaultsKey.glowRestingLine) as? Bool ?? glowRestingLine
+        followGlideSpeed = double(DefaultsKey.followGlideSpeed, followGlideSpeed, 2, 12)
+        followJumpBoost = double(DefaultsKey.followJumpBoost, followJumpBoost, 1, 6)
+        followReadingLine = double(DefaultsKey.followReadingLine, followReadingLine, 0, 1)
+        textSideMargin = double(DefaultsKey.textSideMargin, textSideMargin, 16, 90)
+        textTopOffset = double(DefaultsKey.textTopOffset, textTopOffset, 30, 70)
+        autoHideControls = defaults.object(forKey: DefaultsKey.autoHideControls) as? Bool ?? autoHideControls
+        pauseOnHover = defaults.object(forKey: DefaultsKey.pauseOnHover) as? Bool ?? pauseOnHover
     }
 
     func saveToDefaults() {
@@ -334,6 +501,22 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
         defaults.set(countdownBehavior.rawValue, forKey: DefaultsKey.countdownBehavior)
         defaults.set(scrollMode.rawValue, forKey: DefaultsKey.scrollMode)
         defaults.set(selectedScreenID, forKey: DefaultsKey.selectedScreenID)
+        defaults.set(voiceMode.rawValue, forKey: DefaultsKey.voiceMode)
+        defaults.set(voiceSensitivity, forKey: DefaultsKey.voiceSensitivity)
+        defaults.set(glowEnabled, forKey: DefaultsKey.glowEnabled)
+        if let c = NSColor(glowColor).usingColorSpace(.sRGB) {
+            defaults.set([Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent)], forKey: DefaultsKey.glowColor)
+        }
+        defaults.set(glowWidth, forKey: DefaultsKey.glowWidth)
+        defaults.set(glowIntensity, forKey: DefaultsKey.glowIntensity)
+        defaults.set(glowRestingLine, forKey: DefaultsKey.glowRestingLine)
+        defaults.set(followGlideSpeed, forKey: DefaultsKey.followGlideSpeed)
+        defaults.set(followJumpBoost, forKey: DefaultsKey.followJumpBoost)
+        defaults.set(followReadingLine, forKey: DefaultsKey.followReadingLine)
+        defaults.set(textSideMargin, forKey: DefaultsKey.textSideMargin)
+        defaults.set(textTopOffset, forKey: DefaultsKey.textTopOffset)
+        defaults.set(autoHideControls, forKey: DefaultsKey.autoHideControls)
+        defaults.set(pauseOnHover, forKey: DefaultsKey.pauseOnHover)
     }
 
     private func beginCountdown(seconds: Int) {
@@ -363,11 +546,32 @@ Tip: Use the menu bar icon to start/pause or reset the scroll.
     }
     
     private func beginRunningNow() {
+        // Run before clearing the countdown so the mic isn't torn down and restarted in between.
+        isRunning = true
         isCountingDown = false
         countdownRemaining = 0
         hasStartedSession = true
         shouldUseCountdownOnNextStart = false
-        isRunning = true
+    }
+
+    // The mic is live only while voice scrolling can actually matter, so the system indicator isn't always on.
+    private func syncVoiceMonitor() {
+        followLog.info("sync mode=\(self.voiceMode.rawValue, privacy: .public) running=\(self.isRunning) countdown=\(self.isCountingDown) following=\(self.isFollowingWords) micDenied=\(self.voicePermissionDenied) micUnavail=\(self.voiceUnavailable) spDenied=\(self.speechPermissionDenied) spUnavail=\(self.speechUnavailable)")
+        if voiceMode != .off && (isRunning || isCountingDown) {
+            voiceMonitor.start()
+        } else {
+            voiceMonitor.stop()
+        }
+        if voiceMode == .followWords && (isRunning || isCountingDown) {
+            speechFollower.setScript(script)
+            speechFollower.start()
+        } else {
+            speechFollower.stop()
+        }
+    }
+
+    func toggleVoice() {
+        voiceMode = voiceMode == .off ? lastActiveVoiceMode : .off
     }
 
     private func clampedSpeed(_ value: Double) -> Double {
